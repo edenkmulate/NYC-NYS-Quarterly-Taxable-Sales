@@ -90,6 +90,40 @@ def load_sales_tax_data():
         "Q" + df["sales_tax_quarter"].fillna(0).astype(int).astype(str) + 
         " (" + df["selling_period"].fillna("") + ")"
     )
+    # Official 2-digit NAICS Sector Lookup (handles combined 31-33, 44-45, 48-49 prefixes)
+    naics_2digit_map = {
+        "11": "Agriculture, Forestry, Fishing and Hunting",
+        "21": "Mining, Quarrying, and Oil and Gas Extraction",
+        "22": "Utilities",
+        "23": "Construction",
+        "31": "Manufacturing",
+        "32": "Manufacturing",
+        "33": "Manufacturing",
+        "42": "Wholesale Trade",
+        "44": "Retail Trade",
+        "45": "Retail Trade",
+        "48": "Transportation and Warehousing",
+        "49": "Transportation and Warehousing",
+        "51": "Information",
+        "52": "Finance and Insurance",
+        "53": "Real Estate and Rental and Leasing",
+        "54": "Professional, Scientific, and Technical Services",
+        "55": "Management of Companies and Enterprises",
+        "56": "Administrative and Support and Waste Management",
+        "61": "Educational Services",
+        "62": "Health Care and Social Assistance",
+        "71": "Arts, Entertainment, and Recreation",
+        "72": "Accommodation and Food Services",
+        "81": "Other Services (except Public Administration)",
+        "92": "Public Administration",
+        "99": "Unclassified"
+    }
+
+    df["naics_2digit"] = df["naics_industry_group"].str[:2]
+    df["naics_2digit_desc"] = df["naics_2digit"].map(naics_2digit_map).fillna("Other / Unclassified")
+    
+    # Combined label so users can search by either the 2-digit code OR its description
+    df["naics_sector_label"] = df["naics_2digit"] + " - " + df["naics_2digit_desc"]
 
     return df
 
@@ -100,40 +134,58 @@ if mod_df.empty:
     st.stop()
 
 # ==============================================================================
-# 3. INDUSTRY FILTERS (Description & NAICS Industry Group)
+# 3. INDUSTRY FILTERS (Sorted Highest -> Lowest Taxable Sales)
 # ==============================================================================
-st.subheader("🎛️ Filter by Industry")
+st.subheader("🎛️ Filter by Industry & Timeframe")
 
-col_f1, col_f2, col_f3 = st.columns([2, 1.2, 1.3])
+col_f1, col_f2, col_f3 = st.columns([1.8, 1.8, 1.2])
 
-# Build sorted options
-all_descriptions = sorted(mod_df["description"].dropna().unique().tolist())
-all_naics = sorted(mod_df["naics_industry_group"].dropna().unique().tolist())
-all_tax_years = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
-
-# Default to a prominent sector (e.g., Restaurants and Other Eating Places - 7225)
-default_desc = ["Restaurants and Other Eating Places"] if "Restaurants and Other Eating Places" in all_descriptions else [all_descriptions[0]]
+# 1. Rank 2-Digit NAICS Sectors from highest to lowest total taxable sales
+sector_ranked = (
+    mod_df.groupby("naics_sector_label")["taxable_sales_and_purchases"]
+    .sum()
+    .sort_values(ascending=False)
+    .index.tolist()
+)
 
 with col_f1:
+    selected_sectors = st.multiselect(
+        "Filter by 2-Digit NAICS Code or Sector Description",
+        options=sector_ranked,
+        default=[],
+        placeholder="All 2-Digit NAICS Sectors (type code or name...)",
+        key="sector_filter"
+    )
+
+# 2. Scope 4-Digit Industry Descriptions to selected 2-digit sectors (if any) & sort by sales
+desc_pool_df = mod_df[mod_df["naics_sector_label"].isin(selected_sectors)] if selected_sectors else mod_df
+desc_ranked = (
+    desc_pool_df.groupby("description")["taxable_sales_and_purchases"]
+    .sum()
+    .sort_values(ascending=False)
+    .index.tolist()
+)
+
+# Default to top-ranked industry (or Accommodation/Food if no 2-digit filter is active)
+if not selected_sectors:
+    default_desc = ["Restaurants and Other Eating Places"] if "Restaurants and Other Eating Places" in desc_ranked else ([desc_ranked[0]] if desc_ranked else [])
+else:
+    default_desc = []  # Show the entire selected 2-digit sector unless narrowed down
+
+with col_f2:
     selected_descriptions = st.multiselect(
-        "Filter by Industry Description",
-        options=all_descriptions,
+        "Filter by Specific Industry Description (4-Digit NAICS)",
+        options=desc_ranked,
         default=default_desc,
+        placeholder="All industries within selected sector...",
         key="desc_filter"
     )
 
-with col_f2:
-    selected_naics = st.multiselect(
-        "Filter by NAICS Industry Group",
-        options=all_naics,
-        default=[],
-        placeholder="All NAICS codes (optional)",
-        key="naics_filter"
-    )
+# 3. Sales Tax Year Filter
+all_tax_years = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
+default_years = all_tax_years[-6:] if len(all_tax_years) >= 6 else all_tax_years
 
 with col_f3:
-    # Default to the most recent 6 sales tax years so bars aren't cramped
-    default_years = all_tax_years[-6:] if len(all_tax_years) >= 6 else all_tax_years
     selected_years = st.multiselect(
         "Filter by Sales Tax Year",
         options=all_tax_years,
@@ -141,19 +193,14 @@ with col_f3:
         key="year_filter"
     )
 
-# Apply Industry & Year Filters
+# Apply Filters
 filtered_df = mod_df.copy()
 
-if selected_descriptions and selected_naics:
-    # If user selects both, match records belonging to either selection
-    filtered_df = filtered_df[
-        (filtered_df["description"].isin(selected_descriptions)) |
-        (filtered_df["naics_industry_group"].isin(selected_naics))
-    ]
-elif selected_descriptions:
+if selected_sectors:
+    filtered_df = filtered_df[filtered_df["naics_sector_label"].isin(selected_sectors)]
+
+if selected_descriptions:
     filtered_df = filtered_df[filtered_df["description"].isin(selected_descriptions)]
-elif selected_naics:
-    filtered_df = filtered_df[filtered_df["naics_industry_group"].isin(selected_naics)]
 
 if selected_years:
     filtered_df = filtered_df[filtered_df["sales_tax_year"].isin(selected_years)]
@@ -162,14 +209,20 @@ if filtered_df.empty:
     st.warning("No records match your current filter selection. Please adjust the filters above.")
     st.stop()
 
-# Build dynamic title suffix for selected industries
-active_labels = sorted(filtered_df["description"].unique().tolist())
+# Build dynamic title suffix based on active 2-digit sector or 4-digit description
+if selected_descriptions:
+    active_labels = sorted(filtered_df["description"].unique().tolist())
+elif selected_sectors:
+    active_labels = sorted(filtered_df["naics_sector_label"].unique().tolist())
+else:
+    active_labels = ["All Industries"]
+
 if len(active_labels) == 1:
     industry_title = active_labels[0]
 elif len(active_labels) <= 3:
     industry_title = ", ".join(active_labels)
 else:
-    industry_title = f"{active_labels[0]} + {len(active_labels) - 1} Other Industries"
+    industry_title = f"{active_labels[0]} + {len(active_labels) - 1} More"
 
 # ==============================================================================
 # 4. SUMMARY METRICS (NYC vs. NYS)
