@@ -135,11 +135,11 @@ if mod_df.empty:
     st.stop()
 
 # ==============================================================================
-# 3. INDUSTRY FILTERS (Sorted Highest -> Lowest Taxable Sales)
+# 3. INDUSTRY FILTERS (No Default Selection + Year Range Slider)
 # ==============================================================================
 st.subheader("🎛️ Filter by Industry & Timeframe")
 
-col_f1, col_f2, col_f3 = st.columns([1.8, 1.8, 1.2])
+col_f1, col_f2 = st.columns(2)
 
 # 1. Rank 2-Digit NAICS Sectors from highest to lowest total taxable sales
 sector_ranked = (
@@ -153,7 +153,7 @@ with col_f1:
     selected_sectors = st.multiselect(
         "Filter by 2-Digit NAICS Code or Sector Description",
         options=sector_ranked,
-        default=[],
+        default=[],  # Defaults to empty (all sectors included)
         placeholder="All 2-Digit NAICS Sectors (type code or name...)",
         key="sector_filter"
     )
@@ -167,32 +167,31 @@ desc_ranked = (
     .index.tolist()
 )
 
-# Default to top-ranked industry (or Accommodation/Food if no 2-digit filter is active)
-if not selected_sectors:
-    default_desc = ["Restaurants and Other Eating Places"] if "Restaurants and Other Eating Places" in desc_ranked else ([desc_ranked[0]] if desc_ranked else [])
-else:
-    default_desc = []  # Show the entire selected 2-digit sector unless narrowed down
-
 with col_f2:
     selected_descriptions = st.multiselect(
         "Filter by Specific Industry Description (4-Digit NAICS)",
         options=desc_ranked,
-        default=default_desc,
-        placeholder="All industries within selected sector...",
+        default=[],  # Defaults to empty (all industries included)
+        placeholder="All Specific Industries (type description...)",
         key="desc_filter"
     )
 
-# 3. Sales Tax Year Filter
+# 3. Sales Tax Year Range Slider (Defaults to past 6 sales tax years)
 all_tax_years = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
-default_years = all_tax_years[-6:] if len(all_tax_years) >= 6 else all_tax_years
 
-with col_f3:
-    selected_years = st.multiselect(
-        "Filter by Sales Tax Year",
+if len(all_tax_years) > 1:
+    default_start_year = all_tax_years[-6] if len(all_tax_years) >= 6 else all_tax_years
+    start_sty, end_sty = st.select_slider(
+        "Select Sales Tax Year Range",
         options=all_tax_years,
-        default=default_years,
-        key="year_filter"
+        value=(default_start_year, all_tax_years[-1]),
+        key="year_range_slider"
     )
+    start_idx = all_tax_years.index(start_sty)
+    end_idx = all_tax_years.index(end_sty)
+    selected_years = all_tax_years[start_idx : end_idx + 1]
+else:
+    selected_years = all_tax_years
 
 # Apply Filters
 filtered_df = mod_df.copy()
@@ -219,11 +218,11 @@ else:
     active_labels = ["All Industries"]
 
 if len(active_labels) == 1:
-    industry_title = active_labels[0]
+    industry_title = active_labels
 elif len(active_labels) <= 3:
     industry_title = ", ".join(active_labels)
 else:
-    industry_title = f"{active_labels[0]} + {len(active_labels) - 1} More"
+    industry_title = f"{active_labels} + {len(active_labels) - 1} More"
 
 # ==============================================================================
 # 4. SUMMARY METRICS (NYC vs. NYS)
