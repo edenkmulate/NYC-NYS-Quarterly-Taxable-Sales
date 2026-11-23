@@ -272,48 +272,88 @@ with stack_col2:
 
 st.divider()
 # ==============================================================================
-# 3. INDUSTRY FILTERS (No Default Selection + Year Range Slider)
+# 3. INDUSTRY FILTERS (Bi-Directional Sync + Sorted Highest -> Lowest Sales)
 # ==============================================================================
 st.subheader("🎛️ Filter by Industry & Timeframe")
 
-col_f1, col_f2 = st.columns(2)
+# Build lookup dictionaries between 4-digit description and 2-digit sector label
+desc_to_sector = dict(zip(mod_df["description"], mod_df["naics_sector_label"]))
 
-# 1. Rank 2-Digit NAICS Sectors from highest to lowest total taxable sales
-sector_ranked = (
+# Rank all 2-digit sectors and all 4-digit descriptions from highest -> lowest sales
+all_sectors_ranked = (
     mod_df.groupby("naics_sector_label")["taxable_sales_and_purchases"]
     .sum()
     .sort_values(ascending=False)
     .index.tolist()
 )
-
-with col_f1:
-    selected_sectors = st.multiselect(
-        "Filter by 2-Digit NAICS Code or Sector Description",
-        options=sector_ranked,
-        default=[],  # Defaults to empty (all sectors included)
-        placeholder="All 2-Digit NAICS Sectors (type code or name...)",
-        key="sector_filter"
-    )
-
-# 2. Scope 4-Digit Industry Descriptions to selected 2-digit sectors (if any) & sort by sales
-desc_pool_df = mod_df[mod_df["naics_sector_label"].isin(selected_sectors)] if selected_sectors else mod_df
-desc_ranked = (
-    desc_pool_df.groupby("description")["taxable_sales_and_purchases"]
+all_descs_ranked = (
+    mod_df.groupby("description")["taxable_sales_and_purchases"]
     .sum()
     .sort_values(ascending=False)
     .index.tolist()
 )
 
+# Initialize session state keys if not present
+if "sector_filter" not in st.session_state:
+    st.session_state["sector_filter"] = []
+if "desc_filter" not in st.session_state:
+    st.session_state["desc_filter"] = []
+
+# Callback 1: When 4-digit description changes -> automatically narrow 2-digit sector dropdown
+def on_desc_change():
+    chosen_descs = st.session_state["desc_filter"]
+    if chosen_descs:
+        matching_sectors = sorted({desc_to_sector[d] for d in chosen_descs if d in desc_to_sector})
+        st.session_state["sector_filter"] = matching_sectors
+
+# Callback 2: When 2-digit sector changes -> prune any 4-digit selections outside those sectors
+def on_sector_change():
+    chosen_sectors = st.session_state["sector_filter"]
+    if chosen_sectors:
+        st.session_state["desc_filter"] = [
+            d for d in st.session_state["desc_filter"]
+            if desc_to_sector.get(d) in chosen_sectors
+        ]
+
+col_f1, col_f2 = st.columns(2)
+
+# Scope 2-digit options if 4-digit descriptions are selected; scope 4-digit options if 2-digit sectors are selected
+if st.session_state["desc_filter"]:
+    narrowed_sectors = sorted({desc_to_sector[d] for d in st.session_state["desc_filter"] if d in desc_to_sector})
+    sector_options = [s for s in all_sectors_ranked if s in narrowed_sectors]
+else:
+    sector_options = all_sectors_ranked
+
+if st.session_state["sector_filter"]:
+    desc_pool_df = mod_df[mod_df["naics_sector_label"].isin(st.session_state["sector_filter"])]
+    desc_options = (
+        desc_pool_df.groupby("description")["taxable_sales_and_purchases"]
+        .sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+else:
+    desc_options = all_descs_ranked
+
+with col_f1:
+    selected_sectors = st.multiselect(
+        "Filter by 2-Digit NAICS Code or Sector Description",
+        options=sector_options,
+        placeholder="All 2-Digit NAICS Sectors (type code or name...)",
+        key="sector_filter",
+        on_change=on_sector_change
+    )
+
 with col_f2:
     selected_descriptions = st.multiselect(
         "Filter by Specific Industry Description (4-Digit NAICS)",
-        options=desc_ranked,
-        default=[],  # Defaults to empty (all industries included)
+        options=desc_options,
         placeholder="All Specific Industries (type description...)",
-        key="desc_filter"
+        key="desc_filter",
+        on_change=on_desc_change
     )
 
-# 3. Sales Tax Year Range Slider (Defaults to past 6 sales tax years)
+# Sales Tax Year Range Slider (Defaults to past 6 sales tax years)
 all_tax_years = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
 
 if len(all_tax_years) > 1:
@@ -346,7 +386,7 @@ if filtered_df.empty:
     st.warning("No records match your current filter selection. Please adjust the filters above.")
     st.stop()
 
-# Build dynamic title suffix based on active 2-digit sector or 4-digit description
+# Build dynamic title suffix
 if selected_descriptions:
     active_labels = sorted(filtered_df["description"].unique().tolist())
 elif selected_sectors:
