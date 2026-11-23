@@ -392,6 +392,95 @@ with ann_col2:
     else:
         st.info("No NY STATE annual records available.")
 
+# ------------------------------------------------------------------------------
+# ROW D: SIDE-BY-SIDE TREEMAP BY INDUSTRY DESCRIPTION (LATEST QUARTER)
+# ------------------------------------------------------------------------------
+# Identify the most recent Sales Tax Year and Quarter across the full dataset
+latest_year_all = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())[-1]
+latest_qtr_all = int(mod_df[mod_df["sales_tax_year"] == latest_year_all]["sales_tax_quarter"].max())
+latest_period_name = (
+    mod_df[
+        (mod_df["sales_tax_year"] == latest_year_all) & 
+        (mod_df["sales_tax_quarter"] == latest_qtr_all)
+    ]["selling_period"].iloc
+)
+
+st.subheader(f"4️⃣ Industry Breakdown Treemap — Latest Quarter ({latest_year_all} Q{latest_qtr_all}: {latest_period_name})")
+
+top_n = st.slider(
+    "Number of Top Industries to Display in Treemap",
+    min_value=10,
+    max_value=50,
+    value=25,
+    step=5,
+    key="treemap_top_n"
+)
+
+latest_qtr_df = mod_df[
+    (mod_df["sales_tax_year"] == latest_year_all) &
+    (mod_df["sales_tax_quarter"] == latest_qtr_all) &
+    (mod_df["taxable_sales_and_purchases"] > 0)
+].copy()
+
+# Derive 2-digit NAICS Sector code for clean hierarchical grouping in the treemap
+latest_qtr_df["naics_sector"] = "NAICS " + latest_qtr_df["naics_industry_group"].str[:2]
+
+def build_treemap_chart(sub_df, title_text, color_scale):
+    agg_tree = (
+        sub_df.groupby(["naics_sector", "description"], as_index=False)["taxable_sales_and_purchases"]
+        .sum()
+        .sort_values("taxable_sales_and_purchases", ascending=False)
+        .head(top_n)
+    )
+    fig = px.treemap(
+        agg_tree,
+        path=[px.Constant("All Displayed Industries"), "naics_sector", "description"],
+        values="taxable_sales_and_purchases",
+        color="taxable_sales_and_purchases",
+        color_continuous_scale=color_scale,
+        title=title_text,
+        labels={"taxable_sales_and_purchases": "Taxable Sales ($)"}
+    )
+    fig.update_traces(
+        textinfo="label+percent root",
+        hovertemplate="<b>%{label}</b><br>Taxable Sales: $%{value:,.0f}<br>Share of Displayed: %{percentRoot:.1%}<extra></extra>"
+    )
+    fig.update_layout(margin=dict(t=50, l=10, r=10, b=10))
+    fig.update_coloraxes(showscale=False)
+    return fig
+
+tree_col1, tree_col2 = st.columns(2)
+
+with tree_col1:
+    nyc_latest = latest_qtr_df[latest_qtr_df["jurisdiction"] == "NY CITY"]
+    if not nyc_latest.empty:
+        st.plotly_chart(
+            build_treemap_chart(
+                nyc_latest,
+                f"🗽 NYC Top {top_n} Industries ({latest_year_all} Q{latest_qtr_all})",
+                "Blues"
+            ),
+            use_container_width=True,
+            key="nyc_treemap"
+        )
+    else:
+        st.info("No NY CITY records available for the latest quarter.")
+
+with tree_col2:
+    nys_latest = latest_qtr_df[latest_qtr_df["jurisdiction"] == "NY STATE"]
+    if not nys_latest.empty:
+        st.plotly_chart(
+            build_treemap_chart(
+                nys_latest,
+                f"🏛️ NYS Top {top_n} Industries ({latest_year_all} Q{latest_qtr_all})",
+                "Greens"
+            ),
+            use_container_width=True,
+            key="nys_treemap"
+        )
+    else:
+        st.info("No NY STATE records available for the latest quarter.")
+
 # ==============================================================================
 # 6. UNDERLYING DATA TABLE & CSV DOWNLOAD
 # ==============================================================================
