@@ -518,7 +518,7 @@ def build_stacked_naics_chart(sub_df, title_text):
         xaxis_title="Sales Tax Year",
         yaxis_title=f"Q{latest_qtr_all} Taxable Sales ($)",
         legend_title="2-Digit NAICS (Top 5 Highlighted)",
-        legend_traceorder="reversed"
+        legend_traceorder="normal"
     )
     return fig
 
