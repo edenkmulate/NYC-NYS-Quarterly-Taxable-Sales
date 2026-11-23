@@ -245,7 +245,7 @@ m3.metric("📊 NYC Share of Statewide Sales", f"{nyc_share:.1f}%")
 st.divider()
 
 # ==============================================================================
-# 5. SIDE-BY-SIDE CHARTS: QUARTERLY, YTD, AND ANNUAL (NYC vs. NYS)
+# 5. SIDE-BY-SIDE CHARTS: STACKED NAICS (FIRST), QUARTERLY, YTD, ANNUAL, TREEMAP
 # ==============================================================================
 year_order = sorted(filtered_df["sales_tax_year"].unique().tolist())
 quarter_order = (
@@ -254,6 +254,118 @@ quarter_order = (
     .sort_values("sales_tax_quarter")["quarter_label"]
     .tolist()
 )
+
+# ------------------------------------------------------------------------------
+# ROW 1 (FIRST CHART): HISTORICAL LATEST-QUARTER STACKED BY 2-DIGIT NAICS
+# (Independent of sector/industry dropdowns; responds only to Sales Tax Year)
+# ------------------------------------------------------------------------------
+latest_year_all = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())[-1]
+latest_qtr_all = int(mod_df[mod_df["sales_tax_year"] == latest_year_all]["sales_tax_quarter"].max())
+
+# Fixed .iloc[0] so the period name string displays cleanly
+latest_period_name = (
+    mod_df[
+        (mod_df["sales_tax_year"] == latest_year_all) & 
+        (mod_df["sales_tax_quarter"] == latest_qtr_all)
+    ]["selling_period"].iloc[0]
+)
+
+st.subheader(f"1️⃣ Historical Q{latest_qtr_all} ({latest_period_name}) Stacked by 2-Digit NAICS Sector (All Sectors)")
+st.caption("Displays all 2-digit NAICS sectors (independent of industry filters above), stacked from **largest at the bottom** to **smallest at the top**.")
+
+# Pull from mod_df (not filtered_df) so sector/description filters do not hide other sectors
+qtr_hist_df = mod_df[
+    (mod_df["sales_tax_quarter"] == latest_qtr_all) &
+    (mod_df["sales_tax_year"].isin(selected_years if selected_years else year_order))
+].copy()
+
+def build_stacked_naics_chart(sub_df, title_text):
+    agg_stack = (
+        sub_df.groupby(["sales_tax_year", "naics_sector_label"], as_index=False)["taxable_sales_and_purchases"]
+        .sum()
+    )
+    sector_bottom_to_top = (
+        agg_stack.groupby("naics_sector_label")["taxable_sales_and_purchases"]
+        .sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+
+    # Top 5 largest sectors in color, remaining sectors in progressive shades of grey
+    top_5_palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+    sector_color_map = {}
+
+    for idx, sector in enumerate(sector_bottom_to_top[:5]):
+        sector_color_map[sector] = top_5_palette[idx]
+
+    remaining_sectors = sector_bottom_to_top[5:]
+    n_rem = len(remaining_sectors)
+    if n_rem == 1:
+        sector_color_map[remaining_sectors[0]] = "#9E9E9E"
+    elif n_rem > 1:
+        grey_positions = [0.45 - (0.33 * i / (n_rem - 1)) for i in range(n_rem)]
+        grey_shades = pc.sample_colorscale("Greys", grey_positions)
+        for sector, shade in zip(remaining_sectors, grey_shades):
+            sector_color_map[sector] = shade
+
+    fig = px.bar(
+        agg_stack,
+        x="sales_tax_year",
+        y="taxable_sales_and_purchases",
+        color="naics_sector_label",
+        barmode="stack",
+        color_discrete_map=sector_color_map,
+        category_orders={
+            "sales_tax_year": year_order,
+            "naics_sector_label": sector_bottom_to_top
+        },
+        title=title_text,
+        labels={
+            "sales_tax_year": "Sales Tax Year",
+            "taxable_sales_and_purchases": f"Q{latest_qtr_all} Taxable Sales ($)",
+            "naics_sector_label": "2-Digit NAICS Sector"
+        }
+    )
+    fig.update_layout(
+        xaxis_title="Sales Tax Year",
+        yaxis_title=f"Q{latest_qtr_all} Taxable Sales ($)",
+        legend_title="2-Digit NAICS (Largest First)",
+        legend_traceorder="normal"
+    )
+    return fig
+
+stack_col1, stack_col2 = st.columns(2)
+
+with stack_col1:
+    nyc_qtr_stack = qtr_hist_df[qtr_hist_df["jurisdiction"] == "NY CITY"]
+    if not nyc_qtr_stack.empty:
+        st.plotly_chart(
+            build_stacked_naics_chart(
+                nyc_qtr_stack,
+                f"🗽 NYC Historical Q{latest_qtr_all} ({latest_period_name}) by 2-Digit NAICS"
+            ),
+            use_container_width=True,
+            key="nyc_stacked_naics"
+        )
+    else:
+        st.info(f"No NY CITY records available for Q{latest_qtr_all}.")
+
+with stack_col2:
+    nys_qtr_stack = qtr_hist_df[qtr_hist_df["jurisdiction"] == "NY STATE"]
+    if not nys_qtr_stack.empty:
+        st.plotly_chart(
+            build_stacked_naics_chart(
+                nys_qtr_stack,
+                f"🏛️ NYS Historical Q{latest_qtr_all} ({latest_period_name}) by 2-Digit NAICS"
+            ),
+            use_container_width=True,
+            key="nys_stacked_naics"
+        )
+    else:
+        st.info(f"No NY STATE records available for Q{latest_qtr_all}.")
+
+st.divider()
+
 
 # ------------------------------------------------------------------------------
 # ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
@@ -445,112 +557,7 @@ with ann_col2:
         )
     else:
         st.info("No NY STATE annual records available.")
-# ------------------------------------------------------------------------------
-# ROW D1: HISTORICAL LATEST-QUARTER STACKED BAR BY 2-DIGIT NAICS (LARGEST AT BOTTOM)
-# ------------------------------------------------------------------------------
-# Detect the latest quarter reported in the most recent year across the dataset
-latest_year_all = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())[-1]
-latest_qtr_all = int(mod_df[mod_df["sales_tax_year"] == latest_year_all]["sales_tax_quarter"].max())
-latest_period_name = (
-    mod_df[
-        (mod_df["sales_tax_year"] == latest_year_all) & 
-        (mod_df["sales_tax_quarter"] == latest_qtr_all)
-    ]["selling_period"].iloc
-)
 
-st.subheader(f"4️⃣ Historical Q{latest_qtr_all} ({latest_period_name}) Stacked by 2-Digit NAICS Sector")
-st.caption("Stacked from **largest sector at the bottom** to **smallest at the top** across selected sales tax years.")
-
-# Filter to the same quarter across all selected years (respects active sector/industry filters)
-qtr_hist_df = filtered_df[filtered_df["sales_tax_quarter"] == latest_qtr_all].copy()
-
-def build_stacked_naics_chart(sub_df, title_text):
-    agg_stack = (
-        sub_df.groupby(["sales_tax_year", "naics_sector_label"], as_index=False)["taxable_sales_and_purchases"]
-        .sum()
-    )
-    # Sort sectors from LARGEST to SMALLEST so Plotly stacks largest at the bottom -> smallest at the top
-    sector_bottom_to_top = (
-        agg_stack.groupby("naics_sector_label")["taxable_sales_and_purchases"]
-        .sum()
-        .sort_values(ascending=False)
-        .index.tolist()
-    )
-
-    # 1. Assign 5 distinct bold colors to the top 5 largest sectors (bottom 5 blocks of the stack)
-    top_5_palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
-    sector_color_map = {}
-
-    for idx, sector in enumerate(sector_bottom_to_top[:5]):
-        sector_color_map[sector] = top_5_palette[idx]
-
-    # 2. Assign progressive shades of grey to all remaining sectors (6th largest -> smallest at top)
-    remaining_sectors = sector_bottom_to_top[5:]
-    n_rem = len(remaining_sectors)
-    if n_rem == 1:
-        sector_color_map[remaining_sectors[0]] = "#9E9E9E"
-    elif n_rem > 1:
-        # Sample medium-dark grey (#757575) to light grey (#E0E0E0) so every slice stays distinguishable
-        grey_positions = [0.45 - (0.33 * i / (n_rem - 1)) for i in range(n_rem)]
-        grey_shades = pc.sample_colorscale("Greys", grey_positions)
-        for sector, shade in zip(remaining_sectors, grey_shades):
-            sector_color_map[sector] = shade
-
-    fig = px.bar(
-        agg_stack,
-        x="sales_tax_year",
-        y="taxable_sales_and_purchases",
-        color="naics_sector_label",
-        barmode="stack",
-        color_discrete_map=sector_color_map,
-        category_orders={
-            "sales_tax_year": year_order,
-            "naics_sector_label": sector_bottom_to_top  # Largest at bottom -> smallest at top
-        },
-        title=title_text,
-        labels={
-            "sales_tax_year": "Sales Tax Year",
-            "taxable_sales_and_purchases": f"Q{latest_qtr_all} Taxable Sales ($)",
-            "naics_sector_label": "2-Digit NAICS Sector"
-        }
-    )
-    fig.update_layout(
-        xaxis_title="Sales Tax Year",
-        yaxis_title=f"Q{latest_qtr_all} Taxable Sales ($)",
-        legend_title="2-Digit NAICS (Top 5 Highlighted)",
-        legend_traceorder="normal"
-    )
-    return fig
-
-stack_col1, stack_col2 = st.columns(2)
-
-with stack_col1:
-    nyc_qtr_stack = qtr_hist_df[qtr_hist_df["jurisdiction"] == "NY CITY"]
-    if not nyc_qtr_stack.empty:
-        st.plotly_chart(
-            build_stacked_naics_chart(
-                nyc_qtr_stack,
-                f"🗽 NYC Historical Q{latest_qtr_all} ({latest_period_name}) by 2-Digit NAICS"
-            ),
-            use_container_width=True,
-            key="nyc_stacked_naics"
-        )
-    else:
-        st.info(f"No NY CITY records available for Q{latest_qtr_all}.")
-
-with stack_col2:
-    nys_qtr_stack = qtr_hist_df[qtr_hist_df["jurisdiction"] == "NY STATE"]
-    if not nys_qtr_stack.empty:
-        st.plotly_chart(
-            build_stacked_naics_chart(
-                nys_qtr_stack,
-                f"🏛️ NYS Historical Q{latest_qtr_all} ({latest_period_name}) by 2-Digit NAICS"
-            ),
-            use_container_width=True,
-            key="nys_stacked_naics"
-        )
-    else:
-        st.info(f"No NY STATE records available for Q{latest_qtr_all}.")
 # ------------------------------------------------------------------------------
 # ROW D2: SIDE-BY-SIDE TREEMAP BY INDUSTRY DESCRIPTION (LATEST QUARTER)
 # ------------------------------------------------------------------------------
