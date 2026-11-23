@@ -158,7 +158,7 @@ for idx, row in enumerate(quarter_meta_df.itertuples()):
     
     # Append "(Latest Quarter)" to the newest reported quarter and capture its index
     if q_num == latest_qtr_all:
-        display_label = f"{base_label} :blue-badge[Latest Quarter]"
+        display_label = f"{base_label} :blue-badge[**Latest Quarter**]"
         default_qtr_idx = idx
     else:
         display_label = base_label
