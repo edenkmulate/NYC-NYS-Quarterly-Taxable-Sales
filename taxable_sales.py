@@ -362,97 +362,87 @@ else:
     industry_title = f"{active_labels} + {len(active_labels) - 1} More"
 
 # ==============================================================================
-# 4. SUMMARY METRICS (NYC vs. NYS)
+# 4. SUMMARY METRICS (Latest Quarter Sales, Y/Y Change & Share of Total)
 # ==============================================================================
 st.divider()
 
-nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
-nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
+# Helper to compute latest-quarter sales, prior-year same-quarter sales, and share of total jurisdiction sales
+def get_latest_qtr_kpis(jurisdiction_name):
+    # Full jurisdiction data (all industries) for the latest quarter to compute total denominator
+    jur_all_df = mod_df[mod_df["jurisdiction"] == jurisdiction_name]
+    
+    # Filtered jurisdiction data (selected NAICS / industry) across all years for YoY comparison
+    jur_sel_df = mod_df[mod_df["jurisdiction"] == jurisdiction_name].copy()
+    if selected_sectors:
+        jur_sel_df = jur_sel_df[jur_sel_df["naics_sector_label"].isin(selected_sectors)]
+    if selected_descriptions:
+        jur_sel_df = jur_sel_df[jur_sel_df["description"].isin(selected_descriptions)]
 
-nyc_total = nyc_df["taxable_sales_and_purchases"].sum()
-nys_total = nys_df["taxable_sales_and_purchases"].sum()
-nyc_share = (nyc_total / nys_total * 100) if nys_total > 0 else 0
+    # Latest year & quarter values
+    curr_val = jur_sel_df[
+        (jur_sel_df["sales_tax_year"] == latest_year_all) &
+        (jur_sel_df["sales_tax_quarter"] == latest_qtr_all)
+    ]["taxable_sales_and_purchases"].sum()
 
-m1, m2, m3 = st.columns(3)
-m1.metric("🗽 NYC Total Taxable Sales (Selected Period)", f"${nyc_total / 1_000_000:,.1f}M")
-m2.metric("🏛️ NYS Total Taxable Sales (Selected Period)", f"${nys_total / 1_000_000:,.1f}M")
-m3.metric("🛒 NYC Share of Statewide Sales", f"{nyc_share:.1f}%")
+    # Prior sales tax year (e.g., "2026 - 2027" -> "2025 - 2026")
+    all_sty_sorted = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
+    curr_idx = all_sty_sorted.index(latest_year_all)
+    if curr_idx > 0:
+        prev_sty = all_sty_sorted[curr_idx - 1]
+        prev_val = jur_sel_df[
+            (jur_sel_df["sales_tax_year"] == prev_sty) &
+            (jur_sel_df["sales_tax_quarter"] == latest_qtr_all)
+        ]["taxable_sales_and_purchases"].sum()
+    else:
+        prev_val = 0
 
-st.divider()
+    yoy_diff_m = (curr_val - prev_val) / 1_000_000 if prev_val != 0 else None
+    yoy_pct = ((curr_val - prev_val) / abs(prev_val) * 100) if prev_val != 0 else None
 
-# ==============================================================================
-# 5. SIDE-BY-SIDE CHARTS: STACKED NAICS (FIRST), QUARTERLY, YTD, ANNUAL, TREEMAP
-# ==============================================================================
-year_order = sorted(filtered_df["sales_tax_year"].unique().tolist())
-quarter_order = (
-    filtered_df[["sales_tax_quarter", "quarter_label"]]
-    .drop_duplicates()
-    .sort_values("sales_tax_quarter")["quarter_label"]
-    .tolist()
+    # Total jurisdiction taxable sales across ALL industries in the latest quarter
+    total_jur_latest_qtr = jur_all_df[
+        (jur_all_df["sales_tax_year"] == latest_year_all) &
+        (jur_all_df["sales_tax_quarter"] == latest_qtr_all)
+    ]["taxable_sales_and_purchases"].sum()
+
+    share_of_total_pct = (curr_val / total_jur_latest_qtr * 100) if total_jur_latest_qtr > 0 else 0.0
+
+    return curr_val, yoy_diff_m, yoy_pct, share_of_total_pct
+
+nyc_curr, nyc_diff_m, nyc_yoy_pct, nyc_share_total = get_latest_qtr_kpis("NY CITY")
+nys_curr, nys_diff_m, nys_yoy_pct, nys_share_total = get_latest_qtr_kpis("NY STATE")
+
+st.markdown(f"### 📌 Latest Quarter Snapshot ({latest_year_all} Q{latest_qtr_all}) — {industry_title}")
+
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric(
+    label=f"🗽 NYC Q{latest_qtr_all} Taxable Sales",
+    value=f"${nyc_curr / 1_000_000:,.1f}M",
+    delta=f"${nyc_diff_m:+,.1f}M ({nyc_yoy_pct:+.1f}%) Y/Y" if nyc_diff_m is not None else None
 )
 
+m2.metric(
+    label=f"🗽 NYC Share of Total Q{latest_qtr_all} Sales",
+    value=f"{nyc_share_total:.1f}%"
+)
 
+m3.metric(
+    label=f"🏛️ NYS Q{latest_qtr_all} Taxable Sales",
+    value=f"${nys_curr / 1_000_000:,.1f}M",
+    delta=f"${nys_diff_m:+,.1f}M ({nys_yoy_pct:+.1f}%) Y/Y" if nys_diff_m is not None else None
+)
 
-# ------------------------------------------------------------------------------
-# ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
-# ------------------------------------------------------------------------------
-st.subheader(f"Quarterly Taxable Sales by Year — {industry_title}")
-
-def build_quarterly_chart(sub_df, title_text, color_palette):
-    agg_df = (
-        sub_df.groupby(["sales_tax_year", "sales_tax_quarter", "quarter_label"], as_index=False)["taxable_sales_and_purchases"]
-        .sum()
-        .sort_values(["sales_tax_year", "sales_tax_quarter"])
-    )
-    fig = px.bar(
-        agg_df,
-        x="sales_tax_year",
-        y="taxable_sales_and_purchases",
-        color="quarter_label",
-        barmode="group",
-        color_discrete_sequence=color_palette,
-        category_orders={
-            "sales_tax_year": year_order,
-            "quarter_label": quarter_order
-        },
-        title=title_text,
-        labels={
-            "sales_tax_year": "Sales Tax Year",
-            "taxable_sales_and_purchases": "Taxable Sales ($)",
-            "quarter_label": "Quarter"
-        }
-    )
-    fig.update_layout(
-        xaxis_title="Sales Tax Year",
-        yaxis_title="Taxable Sales ($)",
-        legend_title="Quarter",
-        bargap=0.18,
-        bargroupgap=0.05
-    )
-    return fig
-
-q_col1, q_col2 = st.columns(2)
-with q_col1:
-    if not nyc_df.empty:
-        st.plotly_chart(
-            build_quarterly_chart(nyc_df, f"🗽 NYC Quarterly Sales — {industry_title}", px.colors.qualitative.Set2),
-            use_container_width=True,
-            key="nyc_qtr_bar"
-        )
-    else:
-        st.info("No NY CITY records available.")
-
-with q_col2:
-    if not nys_df.empty:
-        st.plotly_chart(
-            build_quarterly_chart(nys_df, f"🏛️ NYS Quarterly Sales — {industry_title}", px.colors.qualitative.Bold),
-            use_container_width=True,
-            key="nys_qtr_bar"
-        )
-    else:
-        st.info("No NY STATE records available.")
+m4.metric(
+    label=f"🏛️ NYS Share of Total Q{latest_qtr_all} Sales",
+    value=f"{nys_share_total:.1f}%"
+)
 
 st.divider()
+
+# Keep nyc_df and nys_df defined for Section 5 charts below
+nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
+nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
 
 # ------------------------------------------------------------------------------
 # ROW B: SALES TAX YEAR-TO-DATE (YTD) COMPARISON (NYC vs. NYS)
