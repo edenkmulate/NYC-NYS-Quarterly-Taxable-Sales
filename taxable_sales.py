@@ -139,33 +139,44 @@ if mod_df.empty:
 latest_year_all = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())[-1]
 latest_qtr_all = int(mod_df[mod_df["sales_tax_year"] == latest_year_all]["sales_tax_quarter"].max())
 
-# Build sorted quarter options: ["Q1 (March - May)", "Q2 (June - August)", ...]
+# Build sorted quarter metadata: Q1 -> Q4
 quarter_meta_df = (
     mod_df[["sales_tax_quarter", "selling_period", "quarter_label"]]
     .dropna(subset=["sales_tax_quarter"])
     .drop_duplicates(subset=["sales_tax_quarter"])
     .sort_values("sales_tax_quarter")
 )
-quarter_radio_options = quarter_meta_df["quarter_label"].tolist()
-qtr_label_to_num = dict(zip(quarter_meta_df["quarter_label"], quarter_meta_df["sales_tax_quarter"].astype(int)))
-qtr_label_to_period = dict(zip(quarter_meta_df["quarter_label"], quarter_meta_df["selling_period"]))
 
-# Default radio button to the latest available quarter
-default_qtr_label = (
-    quarter_meta_df.loc[quarter_meta_df["sales_tax_quarter"] == latest_qtr_all, "quarter_label"].iloc
-)
-default_qtr_idx = quarter_radio_options.index(default_qtr_label) if default_qtr_label in quarter_radio_options else 0
+quarter_radio_options = []
+qtr_display_to_num = {}
+qtr_display_to_period = {}
+default_qtr_idx = 0
+
+for idx, row in enumerate(quarter_meta_df.itertuples()):
+    q_num = int(row.sales_tax_quarter)
+    base_label = row.quarter_label
+    
+    # Append "(Latest Quarter)" to the newest reported quarter and capture its index
+    if q_num == latest_qtr_all:
+        display_label = f"{base_label} (Latest Quarter)"
+        default_qtr_idx = idx
+    else:
+        display_label = base_label
+        
+    quarter_radio_options.append(display_label)
+    qtr_display_to_num[display_label] = q_num
+    qtr_display_to_period[display_label] = row.selling_period
 
 selected_qtr_label = st.radio(
     "Select Quarter for Historical Sector Breakdown:",
     options=quarter_radio_options,
-    index=default_qtr_idx,
+    index=default_qtr_idx,  # Automatically defaults to the latest quarter
     horizontal=True,
     key="top_stacked_qtr_radio"
 )
 
-chosen_qtr_num = qtr_label_to_num[selected_qtr_label]
-chosen_period_name = qtr_label_to_period[selected_qtr_label]
+chosen_qtr_num = qtr_display_to_num[selected_qtr_label]
+chosen_period_name = qtr_display_to_period[selected_qtr_label]
 
 st.subheader(f"📊 Historical Q{chosen_qtr_num} ({chosen_period_name}) Stacked by 2-Digit NAICS Sector (All Sectors)")
 st.caption("Stacked from **largest sector at the bottom** to **smallest at the top** across all available sales tax years.")
