@@ -370,7 +370,7 @@ st.divider()
 # ------------------------------------------------------------------------------
 # ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
 # ------------------------------------------------------------------------------
-st.subheader(f"1️⃣ Quarterly Taxable Sales by Year — {industry_title}")
+st.subheader(f"Quarterly Taxable Sales by Year — {industry_title}")
 
 def build_quarterly_chart(sub_df, title_text, color_palette):
     agg_df = (
@@ -437,7 +437,7 @@ latest_qtr_num = int(filtered_df[filtered_df["sales_tax_year"] == latest_sty]["s
 ytd_qtr_labels = [f"Q{q}" for q in range(1, latest_qtr_num + 1)]
 ytd_span_text = f"Q1–Q{latest_qtr_num}" if latest_qtr_num > 1 else "Q1"
 
-st.subheader(f"2️⃣ Sales Tax Year-to-Date ({ytd_span_text}) Comparison — {industry_title}")
+st.subheader(f"Sales Tax Year-to-Date ({ytd_span_text}) Comparison — {industry_title}")
 st.caption(f"Comparing cumulative **{ytd_span_text}** taxable sales across every selected year to match the latest reporting period ({latest_sty} Q{latest_qtr_num}).")
 
 def build_ytd_chart(sub_df, title_text, bar_color):
@@ -497,7 +497,7 @@ st.divider()
 # ------------------------------------------------------------------------------
 # ROW C: FULL ANNUAL TAXABLE SALES BY YEAR (NYC vs. NYS)
 # ------------------------------------------------------------------------------
-st.subheader(f"3️⃣ Annual Taxable Sales by Sales Tax Year — {industry_title}")
+st.subheader(f"Annual Taxable Sales by Sales Tax Year — {industry_title}")
 
 def build_annual_chart(sub_df, title_text, bar_color):
     agg_ann = (
@@ -568,10 +568,10 @@ latest_period_name = (
     mod_df[
         (mod_df["sales_tax_year"] == latest_year_all) & 
         (mod_df["sales_tax_quarter"] == latest_qtr_all)
-    ]["selling_period"].iloc
+    ]["selling_period"].iloc[0]
 )
 
-st.subheader(f"4️⃣ Industry Breakdown Treemap — Latest Quarter ({latest_year_all} Q{latest_qtr_all}: {latest_period_name})")
+st.subheader(f"Industry Breakdown Treemap — Latest Quarter ({latest_year_all} Q{latest_qtr_all}: {latest_period_name})")
 
 top_n = st.slider(
     "Number of Top Industries to Display in Treemap",
