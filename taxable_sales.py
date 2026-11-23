@@ -454,7 +454,7 @@ quarter_order = (
 # ------------------------------------------------------------------------------
 # ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
 # ------------------------------------------------------------------------------
-st.subheader(f"1️⃣ Quarterly Taxable Sales by Year — {industry_title}")
+st.subheader(f"Quarterly Taxable Sales by Year — {industry_title}")
 
 def build_quarterly_chart(sub_df, title_text, color_palette):
     agg_df = (
