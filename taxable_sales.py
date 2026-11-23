@@ -444,9 +444,95 @@ with ann_col2:
         )
     else:
         st.info("No NY STATE annual records available.")
-
 # ------------------------------------------------------------------------------
-# ROW D: SIDE-BY-SIDE TREEMAP BY INDUSTRY DESCRIPTION (LATEST QUARTER)
+# ROW D1: HISTORICAL LATEST-QUARTER STACKED BAR BY 2-DIGIT NAICS (LARGEST AT BOTTOM)
+# ------------------------------------------------------------------------------
+# Detect the latest quarter reported in the most recent year across the dataset
+latest_year_all = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())[-1]
+latest_qtr_all = int(mod_df[mod_df["sales_tax_year"] == latest_year_all]["sales_tax_quarter"].max())
+latest_period_name = (
+    mod_df[
+        (mod_df["sales_tax_year"] == latest_year_all) & 
+        (mod_df["sales_tax_quarter"] == latest_qtr_all)
+    ]["selling_period"].iloc
+)
+
+st.subheader(f"4️⃣ Historical Q{latest_qtr_all} ({latest_period_name}) Stacked by 2-Digit NAICS Sector")
+st.caption("Stacked from **largest sector at the bottom** to **smallest at the top** across selected sales tax years.")
+
+# Filter to the same quarter across all selected years (respects active sector/industry filters)
+qtr_hist_df = filtered_df[filtered_df["sales_tax_quarter"] == latest_qtr_all].copy()
+
+def build_stacked_naics_chart(sub_df, title_text):
+    agg_stack = (
+        sub_df.groupby(["sales_tax_year", "naics_sector_label"], as_index=False)["taxable_sales_and_purchases"]
+        .sum()
+    )
+    # Sort sectors from LARGEST to SMALLEST so Plotly stacks largest at the bottom -> smallest at the top
+    sector_bottom_to_top = (
+        agg_stack.groupby("naics_sector_label")["taxable_sales_and_purchases"]
+        .sum()
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    
+    fig = px.bar(
+        agg_stack,
+        x="sales_tax_year",
+        y="taxable_sales_and_purchases",
+        color="naics_sector_label",
+        barmode="stack",
+        category_orders={
+            "sales_tax_year": year_order,
+            "naics_sector_label": sector_bottom_to_top  # First = bottom of stack, Last = top of stack
+        },
+        color_discrete_sequence=px.colors.qualitative.Alphabet,
+        title=title_text,
+        labels={
+            "sales_tax_year": "Sales Tax Year",
+            "taxable_sales_and_purchases": f"Q{latest_qtr_all} Taxable Sales ($)",
+            "naics_sector_label": "2-Digit NAICS Sector"
+        }
+    )
+    fig.update_layout(
+        xaxis_title="Sales Tax Year",
+        yaxis_title=f"Q{latest_qtr_all} Taxable Sales ($)",
+        legend_title="2-Digit NAICS (Largest at Bottom)",
+        legend_traceorder="reversed"  # Aligns legend top-to-bottom visually with the stack
+    )
+    return fig
+
+stack_col1, stack_col2 = st.columns(2)
+
+with stack_col1:
+    nyc_qtr_stack = qtr_hist_df[qtr_hist_df["jurisdiction"] == "NY CITY"]
+    if not nyc_qtr_stack.empty:
+        st.plotly_chart(
+            build_stacked_naics_chart(
+                nyc_qtr_stack,
+                f"🗽 NYC Historical Q{latest_qtr_all} ({latest_period_name}) by 2-Digit NAICS"
+            ),
+            use_container_width=True,
+            key="nyc_stacked_naics"
+        )
+    else:
+        st.info(f"No NY CITY records available for Q{latest_qtr_all}.")
+
+with stack_col2:
+    nys_qtr_stack = qtr_hist_df[qtr_hist_df["jurisdiction"] == "NY STATE"]
+    if not nys_qtr_stack.empty:
+        st.plotly_chart(
+            build_stacked_naics_chart(
+                nys_qtr_stack,
+                f"🏛️ NYS Historical Q{latest_qtr_all} ({latest_period_name}) by 2-Digit NAICS"
+            ),
+            use_container_width=True,
+            key="nys_stacked_naics"
+        )
+    else:
+        st.info(f"No NY STATE records available for Q{latest_qtr_all}.")
+# ------------------------------------------------------------------------------
+# ROW D2: SIDE-BY-SIDE TREEMAP BY INDUSTRY DESCRIPTION (LATEST QUARTER)
 # ------------------------------------------------------------------------------
 # Identify the most recent Sales Tax Year and Quarter across the full dataset
 latest_year_all = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())[-1]
