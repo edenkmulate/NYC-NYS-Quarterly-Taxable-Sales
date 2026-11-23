@@ -5,6 +5,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import time
+import plotly.colors as pc
 
 # ==============================================================================
 # 1. PAGE CONFIGURATION
@@ -475,18 +476,37 @@ def build_stacked_naics_chart(sub_df, title_text):
         .sort_values(ascending=False)
         .index.tolist()
     )
-    
+
+    # 1. Assign 5 distinct bold colors to the top 5 largest sectors (bottom 5 blocks of the stack)
+    top_5_palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+    sector_color_map = {}
+
+    for idx, sector in enumerate(sector_bottom_to_top[:5]):
+        sector_color_map[sector] = top_5_palette[idx]
+
+    # 2. Assign progressive shades of grey to all remaining sectors (6th largest -> smallest at top)
+    remaining_sectors = sector_bottom_to_top[5:]
+    n_rem = len(remaining_sectors)
+    if n_rem == 1:
+        sector_color_map[remaining_sectors[0]] = "#9E9E9E"
+    elif n_rem > 1:
+        # Sample medium-dark grey (#757575) to light grey (#E0E0E0) so every slice stays distinguishable
+        grey_positions = [0.45 - (0.33 * i / (n_rem - 1)) for i in range(n_rem)]
+        grey_shades = pc.sample_colorscale("Greys", grey_positions)
+        for sector, shade in zip(remaining_sectors, grey_shades):
+            sector_color_map[sector] = shade
+
     fig = px.bar(
         agg_stack,
         x="sales_tax_year",
         y="taxable_sales_and_purchases",
         color="naics_sector_label",
         barmode="stack",
+        color_discrete_map=sector_color_map,
         category_orders={
             "sales_tax_year": year_order,
-            "naics_sector_label": sector_bottom_to_top  # First = bottom of stack, Last = top of stack
+            "naics_sector_label": sector_bottom_to_top  # Largest at bottom -> smallest at top
         },
-        color_discrete_sequence=px.colors.qualitative.Alphabet,
         title=title_text,
         labels={
             "sales_tax_year": "Sales Tax Year",
@@ -497,8 +517,8 @@ def build_stacked_naics_chart(sub_df, title_text):
     fig.update_layout(
         xaxis_title="Sales Tax Year",
         yaxis_title=f"Q{latest_qtr_all} Taxable Sales ($)",
-        legend_title="2-Digit NAICS (Largest at Bottom)",
-        legend_traceorder="reversed"  # Aligns legend top-to-bottom visually with the stack
+        legend_title="2-Digit NAICS (Top 5 Highlighted)",
+        legend_traceorder="reversed"
     )
     return fig
 
