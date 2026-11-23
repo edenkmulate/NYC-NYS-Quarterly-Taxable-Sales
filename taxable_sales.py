@@ -12,11 +12,11 @@ import plotly.colors as pc
 # ==============================================================================
 st.set_page_config(
     page_title="NYC & NYS Quarterly Taxable Sales Dashboard",
-    page_icon="🛍️",
+    page_icon="🛒",
     layout="wide"
 )
 
-st.title("🛍️ NYC & NYS Quarterly Taxable Sales & Purchases by Industry")
+st.title("🛒 NYC & NYS Quarterly Taxable Sales & Purchases by Industry")
 st.markdown("Compare **New York City (`NY CITY`)** and **New York State (`NY STATE`)** taxable sales by quarter and sales tax year across NAICS industries.")
 
 # ==============================================================================
@@ -240,7 +240,7 @@ nyc_share = (nyc_total / nys_total * 100) if nys_total > 0 else 0
 m1, m2, m3 = st.columns(3)
 m1.metric("🗽 NYC Total Taxable Sales (Selected Period)", f"${nyc_total / 1_000_000:,.1f}M")
 m2.metric("🏛️ NYS Total Taxable Sales (Selected Period)", f"${nys_total / 1_000_000:,.1f}M")
-m3.metric("📊 NYC Share of Statewide Sales", f"{nyc_share:.1f}%")
+m3.metric("🛒 NYC Share of Statewide Sales", f"{nyc_share:.1f}%")
 
 st.divider()
 
@@ -270,7 +270,7 @@ latest_period_name = (
     ]["selling_period"].iloc[0]
 )
 
-st.subheader(f"1️⃣ Historical Q{latest_qtr_all} ({latest_period_name}) Stacked by 2-Digit NAICS Sector (All Sectors)")
+st.subheader(f"Historical Q{latest_qtr_all} ({latest_period_name}) Stacked by 2-Digit NAICS Sector (All Sectors)")
 st.caption("Displays all 2-digit NAICS sectors (independent of industry filters above), stacked from **largest at the bottom** to **smallest at the top**.")
 
 # Pull from mod_df (not filtered_df) so sector/description filters do not hide other sectors
