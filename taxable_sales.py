@@ -443,6 +443,14 @@ st.divider()
 # Keep nyc_df and nys_df defined for Section 5 charts below
 nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
 nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
+year_order = sorted(filtered_df["sales_tax_year"].dropna().unique().tolist())
+quarter_order = (
+    filtered_df[["sales_tax_quarter", "quarter_label"]]
+    .dropna(subset=["sales_tax_quarter"])
+    .drop_duplicates()
+    .sort_values("sales_tax_quarter")["quarter_label"]
+    .tolist()
+)
 
 # ------------------------------------------------------------------------------
 # ROW B: SALES TAX YEAR-TO-DATE (YTD) COMPARISON (NYC vs. NYS)
