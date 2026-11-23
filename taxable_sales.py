@@ -191,11 +191,8 @@ m3.metric("📊 NYC Share of Statewide Sales", f"{nyc_share:.1f}%")
 st.divider()
 
 # ==============================================================================
-# 5. SIDE-BY-SIDE BAR CHARTS BY QUARTER BY YEAR (NYC vs. NYS)
+# 5. SIDE-BY-SIDE CHARTS: QUARTERLY, YTD, AND ANNUAL (NYC vs. NYS)
 # ==============================================================================
-st.subheader(f"📊 Quarterly Taxable Sales by Year — {industry_title}")
-
-# Ensure consistent chronological ordering of years and quarters (Q1 -> Q4)
 year_order = sorted(filtered_df["sales_tax_year"].unique().tolist())
 quarter_order = (
     filtered_df[["sales_tax_quarter", "quarter_label"]]
@@ -204,7 +201,12 @@ quarter_order = (
     .tolist()
 )
 
-def build_jurisdiction_chart(sub_df, title_text, color_palette):
+# ------------------------------------------------------------------------------
+# ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
+# ------------------------------------------------------------------------------
+st.subheader(f"1️⃣ Quarterly Taxable Sales by Year — {industry_title}")
+
+def build_quarterly_chart(sub_df, title_text, color_palette):
     agg_df = (
         sub_df.groupby(["sales_tax_year", "sales_tax_quarter", "quarter_label"], as_index=False)["taxable_sales_and_purchases"]
         .sum()
@@ -224,7 +226,7 @@ def build_jurisdiction_chart(sub_df, title_text, color_palette):
         title=title_text,
         labels={
             "sales_tax_year": "Sales Tax Year",
-            "taxable_sales_and_purchases": "Taxable Sales & Purchases ($)",
+            "taxable_sales_and_purchases": "Taxable Sales ($)",
             "quarter_label": "Quarter"
         }
     )
@@ -237,29 +239,158 @@ def build_jurisdiction_chart(sub_df, title_text, color_palette):
     )
     return fig
 
-chart_col1, chart_col2 = st.columns(2)
-
-with chart_col1:
+q_col1, q_col2 = st.columns(2)
+with q_col1:
     if not nyc_df.empty:
-        fig_nyc = build_jurisdiction_chart(
-            nyc_df,
-            f"🗽 New York City (NY CITY) — {industry_title}",
-            px.colors.qualitative.Set2
+        st.plotly_chart(
+            build_quarterly_chart(nyc_df, f"🗽 NYC Quarterly Sales — {industry_title}", px.colors.qualitative.Set2),
+            use_container_width=True,
+            key="nyc_qtr_bar"
         )
-        st.plotly_chart(fig_nyc, use_container_width=True, key="nyc_qtr_bar")
     else:
-        st.info("No NY CITY records available for this selection.")
+        st.info("No NY CITY records available.")
 
-with chart_col2:
+with q_col2:
     if not nys_df.empty:
-        fig_nys = build_jurisdiction_chart(
-            nys_df,
-            f"🏛️ New York State (NY STATE) — {industry_title}",
-            px.colors.qualitative.Bold
+        st.plotly_chart(
+            build_quarterly_chart(nys_df, f"🏛️ NYS Quarterly Sales — {industry_title}", px.colors.qualitative.Bold),
+            use_container_width=True,
+            key="nys_qtr_bar"
         )
-        st.plotly_chart(fig_nys, use_container_width=True, key="nys_qtr_bar")
     else:
-        st.info("No NY STATE records available for this selection.")
+        st.info("No NY STATE records available.")
+
+st.divider()
+
+# ------------------------------------------------------------------------------
+# ROW B: SALES TAX YEAR-TO-DATE (YTD) COMPARISON (NYC vs. NYS)
+# ------------------------------------------------------------------------------
+# Detect the latest quarter reported in the most recent selected sales tax year
+latest_sty = year_order[-1]
+latest_qtr_num = int(filtered_df[filtered_df["sales_tax_year"] == latest_sty]["sales_tax_quarter"].max())
+ytd_qtr_labels = [f"Q{q}" for q in range(1, latest_qtr_num + 1)]
+ytd_span_text = f"Q1–Q{latest_qtr_num}" if latest_qtr_num > 1 else "Q1"
+
+st.subheader(f"2️⃣ Sales Tax Year-to-Date ({ytd_span_text}) Comparison — {industry_title}")
+st.caption(f"Comparing cumulative **{ytd_span_text}** taxable sales across every selected year to match the latest reporting period ({latest_sty} Q{latest_qtr_num}).")
+
+def build_ytd_chart(sub_df, title_text, bar_color):
+    ytd_sub = sub_df[sub_df["sales_tax_quarter"] <= latest_qtr_num]
+    agg_ytd = (
+        ytd_sub.groupby("sales_tax_year", as_index=False)["taxable_sales_and_purchases"]
+        .sum()
+        .sort_values("sales_tax_year")
+    )
+    agg_ytd["yoy_pct"] = agg_ytd["taxable_sales_and_purchases"].pct_change() * 100
+    agg_ytd["text_label"] = agg_ytd["yoy_pct"].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else "")
+
+    fig = px.bar(
+        agg_ytd,
+        x="sales_tax_year",
+        y="taxable_sales_and_purchases",
+        text="text_label",
+        category_orders={"sales_tax_year": year_order},
+        title=title_text,
+        labels={
+            "sales_tax_year": "Sales Tax Year",
+            "taxable_sales_and_purchases": f"YTD ({ytd_span_text}) Taxable Sales ($)"
+        }
+    )
+    fig.update_traces(marker_color=bar_color, textposition="outside")
+    fig.update_layout(
+        xaxis_title="Sales Tax Year",
+        yaxis_title=f"YTD ({ytd_span_text}) Taxable Sales ($)",
+        uniformtext_minsize=8,
+        uniformtext_mode="hide"
+    )
+    return fig
+
+ytd_col1, ytd_col2 = st.columns(2)
+with ytd_col1:
+    if not nyc_df.empty:
+        st.plotly_chart(
+            build_ytd_chart(nyc_df, f"🗽 NYC YTD ({ytd_span_text}) Sales — {industry_title}", "#1f77b4"),
+            use_container_width=True,
+            key="nyc_ytd_bar"
+        )
+    else:
+        st.info("No NY CITY YTD records available.")
+
+with ytd_col2:
+    if not nys_df.empty:
+        st.plotly_chart(
+            build_ytd_chart(nys_df, f"🏛️ NYS YTD ({ytd_span_text}) Sales — {industry_title}", "#2ca02c"),
+            use_container_width=True,
+            key="nys_ytd_bar"
+        )
+    else:
+        st.info("No NY STATE YTD records available.")
+
+st.divider()
+
+# ------------------------------------------------------------------------------
+# ROW C: FULL ANNUAL TAXABLE SALES BY YEAR (NYC vs. NYS)
+# ------------------------------------------------------------------------------
+st.subheader(f"3️⃣ Annual Taxable Sales by Sales Tax Year — {industry_title}")
+
+def build_annual_chart(sub_df, title_text, bar_color):
+    agg_ann = (
+        sub_df.groupby("sales_tax_year", as_index=False)
+        .agg(
+            taxable_sales_and_purchases=("taxable_sales_and_purchases", "sum"),
+            quarters_reported=("sales_tax_quarter", "nunique")
+        )
+        .sort_values("sales_tax_year")
+    )
+    # Only calculate YoY % on full 4-quarter years (or show partial-year note)
+    agg_ann["yoy_pct"] = agg_ann["taxable_sales_and_purchases"].pct_change() * 100
+    agg_ann["bar_label"] = agg_ann.apply(
+        lambda r: f"{r['yoy_pct']:+.1f}%" if (pd.notna(r["yoy_pct"]) and r["quarters_reported"] == 4)
+        else (f"({int(r['quarters_reported'])}Q)" if r["quarters_reported"] < 4 else ""),
+        axis=1
+    )
+
+    fig = px.bar(
+        agg_ann,
+        x="sales_tax_year",
+        y="taxable_sales_and_purchases",
+        text="bar_label",
+        category_orders={"sales_tax_year": year_order},
+        title=title_text,
+        labels={
+            "sales_tax_year": "Sales Tax Year",
+            "taxable_sales_and_purchases": "Annual Taxable Sales ($)"
+        }
+    )
+    fig.update_traces(marker_color=bar_color, textposition="outside")
+    fig.update_layout(
+        xaxis_title="Sales Tax Year",
+        yaxis_title="Annual Taxable Sales ($)",
+        uniformtext_minsize=8,
+        uniformtext_mode="hide"
+    )
+    return fig
+
+ann_col1, ann_col2 = st.columns(2)
+with ann_col1:
+    if not nyc_df.empty:
+        st.plotly_chart(
+            build_annual_chart(nyc_df, f"🗽 NYC Annual Taxable Sales — {industry_title}", "#0b4f6c"),
+            use_container_width=True,
+            key="nyc_ann_bar"
+        )
+    else:
+        st.info("No NY CITY annual records available.")
+
+with ann_col2:
+    if not nys_df.empty:
+        st.plotly_chart(
+            build_annual_chart(nys_df, f"🏛️ NYS Annual Taxable Sales — {industry_title}", "#145a32"),
+            use_container_width=True,
+            key="nys_ann_bar"
+        )
+    else:
+        st.info("No NY STATE annual records available.")
 
 # ==============================================================================
 # 6. UNDERLYING DATA TABLE & CSV DOWNLOAD
