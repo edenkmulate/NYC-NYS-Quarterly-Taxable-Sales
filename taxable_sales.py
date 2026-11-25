@@ -551,6 +551,55 @@ st.divider()
 nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
 nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
 
+# ==============================================================================
+# 5. SIDE-BY-SIDE CHARTS: QUARTERLY, YTD, ANNUAL & TREEMAP
+# ==============================================================================
+year_order = sorted(filtered_df["sales_tax_year"].dropna().unique().tolist())
+quarter_order = (
+    filtered_df[["sales_tax_quarter", "quarter_label"]]
+    .dropna(subset=["sales_tax_quarter"])
+    .drop_duplicates()
+    .sort_values("sales_tax_quarter")["quarter_label"]
+    .tolist()
+)
+
+# ------------------------------------------------------------------------------
+# ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
+# ------------------------------------------------------------------------------
+st.subheader(f"2️⃣ Quarterly Taxable Sales by Year — {industry_title}")
+
+def build_quarterly_chart(sub_df, title_text, color_palette):
+    agg_df = (
+        sub_df.groupby(["sales_tax_year", "sales_tax_quarter", "quarter_label"], as_index=False)["taxable_sales_and_purchases"]
+        .sum()
+        .sort_values(["sales_tax_year", "sales_tax_quarter"])
+    )
+    fig = px.bar(
+        agg_df,
+        x="sales_tax_year",
+        y="taxable_sales_and_purchases",
+        color="quarter_label",
+        barmode="group",
+        color_discrete_sequence=color_palette,
+        category_orders={
+            "sales_tax_year": year_order,
+            "quarter_label": quarter_order
+        },
+        title=title_text,
+        labels={
+            "sales_tax_year": "Sales Tax Year",
+            "taxable_sales_and_purchases": "Taxable Sales ($)",
+            "quarter_label": "Quarter"
+        }
+    )
+    fig.update_layout(
+        xaxis_title="Sales Tax Year",
+        yaxis_title="Taxable Sales ($)",
+        legend_title="Quarter",
+        bargap=0.18,
+        bargroupgap=0.05
+    )
+    return fig
 
 # ------------------------------------------------------------------------------
 # ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
