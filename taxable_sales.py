@@ -18,7 +18,45 @@ st.set_page_config(
 
 st.title("🛒 NYC & NYS Quarterly Taxable Sales & Purchases by Industry")
 st.markdown("Compare **New York City (`NY CITY`)** and **New York State (`NY STATE`)** taxable sales by quarter and sales tax year across NAICS industries.")
-
+st.markdown(
+    """
+    <style>
+    /* Style clickable 2-digit sector driver buttons */
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="primary"] {
+        background-color: #e6f4ea !important;
+        color: #137333 !important;
+        border: 1.5px solid #34a853 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 0.6rem 0.9rem !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="primary"]:hover {
+        background-color: #ceead6 !important;
+        border-color: #137333 !important;
+    }
+    /* Negative driver styling (secondary button inside bordered container) */
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"] {
+        background-color: #fce8e6 !important;
+        color: #c5221f !important;
+        border: 1.5px solid #ea4335 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 0.6rem 0.9rem !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"]:hover {
+        background-color: #fad2cf !important;
+        border-color: #c5221f !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # ==============================================================================
 # 2. CACHED DATA INGESTION (Your Working SODA2 Loader)
 # ==============================================================================
