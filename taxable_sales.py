@@ -401,6 +401,50 @@ elif len(active_labels) <= 3:
 else:
     industry_title = f"{active_labels} + {len(active_labels) - 1} More"
 
+st.markdown(
+    """
+    <style>
+    /* Positive driver styling (Primary buttons inside bordered containers) */
+    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-primary"],
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="primary"] {
+        background-color: #e6f4ea !important;
+        color: #137333 !important;
+        border: 1.5px solid #34a853 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 0.6rem 0.9rem !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-primary"]:hover,
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="primary"]:hover {
+        background-color: #ceead6 !important;
+        border-color: #137333 !important;
+    }
+
+    /* Negative driver styling (Secondary buttons inside bordered containers) */
+    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-secondary"],
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"] {
+        background-color: #fce8e6 !important;
+        color: #c5221f !important;
+        border: 1.5px solid #ea4335 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 0.6rem 0.9rem !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-secondary"]:hover,
+    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"]:hover {
+        background-color: #fad2cf !important;
+        border-color: #c5221f !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # ==============================================================================
 # 4. SUMMARY METRICS & INTERACTIVE TOP Y/Y GROWTH DRIVERS
@@ -412,13 +456,23 @@ curr_sty_idx = all_sty_sorted.index(latest_year_all)
 prev_sty_all = all_sty_sorted[curr_sty_idx - 1] if curr_sty_idx > 0 else None
 
 # Callbacks to filter the dashboard when a user clicks a 2-digit or 4-digit driver
+# Toggle Callback 1: Clicking an already-selected 2-digit sector clears the filter back to All Industries
 def select_sector_driver(sector_label):
-    st.session_state["sector_filter"] = [sector_label]
-    st.session_state["desc_filter"] = []
+    if st.session_state.get("sector_filter") == [sector_label] and not st.session_state.get("desc_filter"):
+        st.session_state["sector_filter"] = []
+        st.session_state["desc_filter"] = []
+    else:
+        st.session_state["sector_filter"] = [sector_label]
+        st.session_state["desc_filter"] = []
 
+# Toggle Callback 2: Clicking an already-selected 4-digit industry steps back to its parent 2-digit sector
 def select_4digit_driver(sector_label, desc_label):
-    st.session_state["sector_filter"] = [sector_label]
-    st.session_state["desc_filter"] = [desc_label]
+    if st.session_state.get("desc_filter") == [desc_label]:
+        st.session_state["sector_filter"] = [sector_label]
+        st.session_state["desc_filter"] = []
+    else:
+        st.session_state["sector_filter"] = [sector_label]
+        st.session_state["desc_filter"] = [desc_label]
 
 def clear_driver_filters():
     st.session_state["sector_filter"] = []
