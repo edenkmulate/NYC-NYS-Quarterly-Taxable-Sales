@@ -571,11 +571,9 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
     ]
 
     # 2. Largest Declining Sector / Drag on Growth (Red) - only if any sector declined
-    neg_sectors = sec_comp[sec_comp["diff"] < 0].sort_values("diff", ascending=True)
+    neg_sectors = sec_comp[sec_comp["diff"] < 0].sort_values("diff", ascending=True).head(1)
     largest_drag = None
-    if not neg_sectors.empty:
-        drag_label = neg_sectors.index
-        drag_row = neg_sectors.iloc
+    for drag_label, drag_row in neg_sectors.iterrows():
         largest_drag = build_sector_entry(drag_label, drag_row, ascending_sub=True)
 
     return curr_val, yoy_diff, yoy_pct, share_pct, top_drivers, largest_drag
