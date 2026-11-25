@@ -404,40 +404,48 @@ else:
 st.markdown(
     """
     <style>
-    /* Positive driver styling (Primary buttons inside bordered containers) */
-    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-primary"],
-    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="primary"] {
+    /* Positive Driver Buttons (type="primary") -> Green Shading */
+    button[data-testid="stBaseButton-primary"],
+    button[kind="primary"] {
         background-color: #e6f4ea !important;
         color: #137333 !important;
         border: 1.5px solid #34a853 !important;
-        font-size: 1.05rem !important;
-        font-weight: 700 !important;
+        border-radius: 8px !important;
         text-align: left !important;
         justify-content: flex-start !important;
-        padding: 0.6rem 0.9rem !important;
-        border-radius: 8px !important;
+        padding: 0.65rem 0.95rem !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-primary"]:hover,
-    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="primary"]:hover {
+    button[data-testid="stBaseButton-primary"] p,
+    button[kind="primary"] p {
+        color: #137333 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+    }
+    button[data-testid="stBaseButton-primary"]:hover,
+    button[kind="primary"]:hover {
         background-color: #ceead6 !important;
         border-color: #137333 !important;
     }
 
-    /* Negative driver styling (Secondary buttons inside bordered containers) */
-    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-secondary"],
-    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"] {
+    /* Negative Driver Buttons (type="secondary") -> Red Shading */
+    button[data-testid="stBaseButton-secondary"],
+    button[kind="secondary"] {
         background-color: #fce8e6 !important;
         color: #c5221f !important;
         border: 1.5px solid #ea4335 !important;
-        font-size: 1.05rem !important;
-        font-weight: 700 !important;
+        border-radius: 8px !important;
         text-align: left !important;
         justify-content: flex-start !important;
-        padding: 0.6rem 0.9rem !important;
-        border-radius: 8px !important;
+        padding: 0.65rem 0.95rem !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"] button[data-testid="stBaseButton-secondary"]:hover,
-    div[data-testid="stVerticalBlockBorderWrapper"] button[kind="secondary"]:hover {
+    button[data-testid="stBaseButton-secondary"] p,
+    button[kind="secondary"] p {
+        color: #c5221f !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+    }
+    button[data-testid="stBaseButton-secondary"]:hover,
+    button[kind="secondary"]:hover {
         background-color: #fad2cf !important;
         border-color: #c5221f !important;
     }
