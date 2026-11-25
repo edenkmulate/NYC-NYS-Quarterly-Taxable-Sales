@@ -578,7 +578,8 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
 
     return curr_val, yoy_diff, yoy_pct, share_pct, top_drivers, largest_drag
 
-
+nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers = analyze_jurisdiction_yoy("NY CITY")
+nys_curr, nys_diff, nys_pct, nys_share, nys_drivers = analyze_jurisdiction_yoy("NY STATE")
 
 
 head_col1, head_col2 = st.columns([4, 1])
@@ -682,8 +683,7 @@ def render_driver_card(col, jur_prefix, title, total_diff, drivers, drag_driver)
 
 render_driver_card(drv_col1, "nyc", "🗽 New York City (NY CITY)", nyc_diff, nyc_drivers, nyc_drag)
 
-nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers = analyze_jurisdiction_yoy("NY CITY")
-nys_curr, nys_diff, nys_pct, nys_share, nys_drivers = analyze_jurisdiction_yoy("NY STATE")
+
 
 head_col1, head_col2 = st.columns([4, 1])
 with head_col1:
