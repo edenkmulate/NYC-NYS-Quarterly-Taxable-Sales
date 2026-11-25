@@ -682,7 +682,12 @@ def render_driver_card(col, jur_prefix, title, total_diff, drivers, drag_driver)
                                 )
 
 render_driver_card(drv_col1, "nyc", "🗽 New York City (NY CITY)", nyc_diff, nyc_drivers, nyc_drag)
+render_driver_card(drv_col2, "nys", "🏛️ New York State (NY STATE)", nys_diff, nys_drivers, nys_drag)
 
+st.divider()
+
+nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
+nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
 
 
 head_col1, head_col2 = st.columns([4, 1])
