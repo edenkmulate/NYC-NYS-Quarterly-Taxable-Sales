@@ -444,19 +444,31 @@ st.markdown(
     unsafe_allow_html=True
 )
 st.divider()
+# ==============================================================================
+# 4. SUMMARY METRICS & INTERACTIVE TOP Y/Y GROWTH DRIVERS
+# ==============================================================================
+st.divider()
 
 all_sty_sorted = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
 curr_sty_idx = all_sty_sorted.index(latest_year_all)
 prev_sty_all = all_sty_sorted[curr_sty_idx - 1] if curr_sty_idx > 0 else None
 
+# Callbacks to filter the dashboard when a user clicks a 2-digit or 4-digit driver
+def select_sector_driver(sector_label):
+    st.session_state["sector_filter"] = [sector_label]
+    st.session_state["desc_filter"] = []
+
+def select_4digit_driver(sector_label, desc_label):
+    st.session_state["sector_filter"] = [sector_label]
+    st.session_state["desc_filter"] = [desc_label]
+
+def clear_driver_filters():
+    st.session_state["sector_filter"] = []
+    st.session_state["desc_filter"] = []
+
 def analyze_jurisdiction_yoy(jurisdiction_name):
-    """
-    Computes latest-quarter taxable sales, Y/Y dollar & % change, share of total,
-    and ranks the top 3 2-digit NAICS drivers + top 4-digit sub-drivers.
-    """
     jur_all_df = mod_df[mod_df["jurisdiction"] == jurisdiction_name]
     
-    # Apply active industry filters (if any)
     jur_sel_df = jur_all_df.copy()
     if selected_sectors:
         jur_sel_df = jur_sel_df[jur_sel_df["naics_sector_label"].isin(selected_sectors)]
@@ -469,7 +481,6 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
     ]
     curr_val = curr_qtr_df["taxable_sales_and_purchases"].sum()
 
-    # Share of total jurisdiction sales across all industries
     total_jur_latest_qtr = jur_all_df[
         (jur_all_df["sales_tax_year"] == latest_year_all) &
         (jur_all_df["sales_tax_quarter"] == latest_qtr_all)
@@ -488,7 +499,7 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
     yoy_diff = curr_val - prev_val
     yoy_pct = (yoy_diff / abs(prev_val) * 100) if prev_val != 0 else None
 
-    # --- 2-Digit Sector Driver Attribution ---
+    # 2-Digit Sector Driver Attribution
     c_sec = curr_qtr_df.groupby("naics_sector_label")["taxable_sales_and_purchases"].sum()
     p_sec = prev_qtr_df.groupby("naics_sector_label")["taxable_sales_and_purchases"].sum()
     sec_comp = pd.DataFrame({"curr": c_sec, "prev": p_sec}).fillna(0)
@@ -497,11 +508,10 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
         lambda r: (r["diff"] / abs(r["prev"]) * 100) if r["prev"] != 0 else None, axis=1
     )
 
-    # Sort descending if overall change is positive, ascending if overall change is negative
     ascending_sort = yoy_diff < 0
     top_3_sectors = sec_comp.sort_values("diff", ascending=ascending_sort).head(3)
 
-    # --- 4-Digit Industry Driver Attribution ---
+    # 4-Digit Industry Driver Attribution
     c_ind = curr_qtr_df.groupby(["naics_sector_label", "naics_industry_group", "description"])["taxable_sales_and_purchases"].sum()
     p_ind = prev_qtr_df.groupby(["naics_sector_label", "naics_industry_group", "description"])["taxable_sales_and_purchases"].sum()
     ind_comp = pd.DataFrame({"curr": c_ind, "prev": p_ind}).fillna(0).reset_index()
@@ -512,19 +522,19 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
 
     drivers_list = []
     for sec_label, row in top_3_sectors.iterrows():
-        # Get top 2 4-digit drivers within this 2-digit sector
         sub_inds = (
             ind_comp[ind_comp["naics_sector_label"] == sec_label]
             .sort_values("diff", ascending=ascending_sort)
-            .head(2)
+            .head(3)
         )
         sub_driver_items = []
         for _, i_row in sub_inds.iterrows():
-            i_diff_m = i_row["diff"] / 1_000_000
-            i_pct_str = f"{i_row['pct']:+.1f}%" if pd.notna(i_row["pct"]) else "N/A"
-            sub_driver_items.append(
-                f"{i_row['naics_industry_group']} - {i_row['description']} (`${i_diff_m:+,.1f}M`, `{i_pct_str}`)"
-            )
+            sub_driver_items.append({
+                "code": i_row["naics_industry_group"],
+                "desc": i_row["description"],
+                "diff_m": i_row["diff"] / 1_000_000,
+                "pct": i_row["pct"]
+            })
 
         drivers_list.append({
             "sector": sec_label,
@@ -538,7 +548,12 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
 nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers = analyze_jurisdiction_yoy("NY CITY")
 nys_curr, nys_diff, nys_pct, nys_share, nys_drivers = analyze_jurisdiction_yoy("NY STATE")
 
-st.markdown(f"### 📌 Latest Quarter Snapshot ({latest_year_all} Q{latest_qtr_all} vs. {prev_sty_all} Q{latest_qtr_all}) — {industry_title}")
+head_col1, head_col2 = st.columns([4, 1])
+with head_col1:
+    st.markdown(f"### 📌 Latest Quarter Snapshot ({latest_year_all} Q{latest_qtr_all} vs. {prev_sty_all} Q{latest_qtr_all}) — {industry_title}")
+with head_col2:
+    if selected_sectors or selected_descriptions:
+        st.button("🔄 Reset Industry Filter", on_click=clear_driver_filters, use_container_width=True)
 
 # Top KPI Cards
 m1, m2, m3, m4 = st.columns(4)
@@ -562,32 +577,59 @@ m4.metric(
     value=f"{nys_share:.1f}%"
 )
 
-# Side-by-Side Driver Callout Boxes (Top 3 2-Digit NAICS + 4-Digit Sub-Drivers)
+# Side-by-Side Interactive Driver Callout Boxes
 drv_col1, drv_col2 = st.columns(2)
 
-def render_driver_card(col, title, total_diff, drivers):
+def render_driver_card(col, jur_prefix, title, total_diff, drivers):
     with col:
         direction_word = "Increase" if (total_diff is not None and total_diff >= 0) else "Decrease"
         diff_m = (total_diff / 1_000_000) if total_diff is not None else 0
         with st.container(border=True):
             st.markdown(f"**{title} — Top 3 Sector Drivers of ${diff_m:+,.1f}M {direction_word}**")
+            st.caption("Click any 2-digit sector button to filter charts below, or expand to inspect 4-digit drivers.")
             if not drivers:
                 st.caption("No prior-year comparison data available.")
             else:
                 for rank, d in enumerate(drivers, start=1):
                     pct_str = f"{d['pct']:+.1f}%" if pd.notna(d["pct"]) else "N/A"
-                    st.markdown(f"**{rank}. {d['sector']}**: `${d['diff_m']:+,.1f}M` (`{pct_str}`)")
-                    for sub in d["sub_drivers"]:
-                        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;↳ {sub}")
+                    is_positive = d["diff_m"] >= 0
+                    btn_type = "primary" if is_positive else "secondary"
+                    trend_icon = "📈" if is_positive else "📉"
 
-render_driver_card(drv_col1, "🗽 New York City (NY CITY)", nyc_diff, nyc_drivers)
-render_driver_card(drv_col2, "🏛️ New York State (NY STATE)", nys_diff, nys_drivers)
+                    # Bold, larger button-style badge shaded green (positive) or red (negative)
+                    st.button(
+                        label=f"{trend_icon} #{rank}  {d['sector']}   |   ${d['diff_m']:+,.1f}M ({pct_str})",
+                        key=f"{jur_prefix}_sec_btn_{rank}",
+                        type=btn_type,
+                        use_container_width=True,
+                        on_click=select_sector_driver,
+                        args=(d["sector"],)
+                    )
+
+                    # Clickable 4-digit dropdown/expander beneath each 2-digit sector
+                    if d["sub_drivers"]:
+                        with st.expander(f"🔍 View Top 4-Digit Drivers in {d['sector']}"):
+                            for sub_idx, sub in enumerate(d["sub_drivers"], start=1):
+                                sub_pct_str = f"{sub['pct']:+.1f}%" if pd.notna(sub["pct"]) else "N/A"
+                                sub_color = "green" if sub["diff_m"] >= 0 else "red"
+                                st.markdown(
+                                    f"**{sub['code']} — {sub['desc']}**: :{sub_color}[**${sub['diff_m']:+,.1f}M ({sub_pct_str})**]"
+                                )
+                                st.button(
+                                    label=f"Filter to {sub['code']} - {sub['desc']}",
+                                    key=f"{jur_prefix}_sub_btn_{rank}_{sub_idx}",
+                                    on_click=select_4digit_driver,
+                                    args=(d["sector"], sub["desc"])
+                                )
+
+render_driver_card(drv_col1, "nyc", "🗽 New York City (NY CITY)", nyc_diff, nyc_drivers)
+render_driver_card(drv_col2, "nys", "🏛️ New York State (NY STATE)", nys_diff, nys_drivers)
 
 st.divider()
 
-# Keep nyc_df and nys_df defined for Section 5 charts below
 nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
 nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
+
 # ------------------------------------------------------------------------------
 # ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
 # ------------------------------------------------------------------------------
