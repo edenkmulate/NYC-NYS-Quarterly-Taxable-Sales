@@ -486,6 +486,10 @@ def clear_driver_filters():
     st.session_state["desc_filter"] = []
 
 def analyze_jurisdiction_yoy(jurisdiction_name):
+    """
+    Computes latest-quarter taxable sales, Y/Y dollar & % change, share of total,
+    top 3 positive 2-digit NAICS drivers, and the largest declining 2-digit sector (drag).
+    """
     jur_all_df = mod_df[mod_df["jurisdiction"] == jurisdiction_name]
     
     jur_sel_df = jur_all_df.copy()
@@ -507,7 +511,7 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
     share_pct = (curr_val / total_jur_latest_qtr * 100) if total_jur_latest_qtr > 0 else 0.0
 
     if not prev_sty_all:
-        return curr_val, None, None, share_pct, []
+        return curr_val, None, None, share_pct, [], None
 
     prev_qtr_df = jur_sel_df[
         (jur_sel_df["sales_tax_year"] == prev_sty_all) &
@@ -518,7 +522,7 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
     yoy_diff = curr_val - prev_val
     yoy_pct = (yoy_diff / abs(prev_val) * 100) if prev_val != 0 else None
 
-    # 2-Digit Sector Driver Attribution
+    # --- 2-Digit Sector Attribution ---
     c_sec = curr_qtr_df.groupby("naics_sector_label")["taxable_sales_and_purchases"].sum()
     p_sec = prev_qtr_df.groupby("naics_sector_label")["taxable_sales_and_purchases"].sum()
     sec_comp = pd.DataFrame({"curr": c_sec, "prev": p_sec}).fillna(0)
@@ -527,10 +531,7 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
         lambda r: (r["diff"] / abs(r["prev"]) * 100) if r["prev"] != 0 else None, axis=1
     )
 
-    ascending_sort = yoy_diff < 0
-    top_3_sectors = sec_comp.sort_values("diff", ascending=ascending_sort).head(3)
-
-    # 4-Digit Industry Driver Attribution
+    # --- 4-Digit Industry Attribution ---
     c_ind = curr_qtr_df.groupby(["naics_sector_label", "naics_industry_group", "description"])["taxable_sales_and_purchases"].sum()
     p_ind = prev_qtr_df.groupby(["naics_sector_label", "naics_industry_group", "description"])["taxable_sales_and_purchases"].sum()
     ind_comp = pd.DataFrame({"curr": c_ind, "prev": p_ind}).fillna(0).reset_index()
@@ -539,30 +540,150 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
         lambda r: (r["diff"] / abs(r["prev"]) * 100) if r["prev"] != 0 else None, axis=1
     )
 
-    drivers_list = []
-    for sec_label, row in top_3_sectors.iterrows():
+    # Helper to format a sector entry + its top 3 sub-drivers in the same direction
+    def build_sector_entry(sec_label, row, ascending_sub=False):
         sub_inds = (
             ind_comp[ind_comp["naics_sector_label"] == sec_label]
-            .sort_values("diff", ascending=ascending_sort)
+            .sort_values("diff", ascending=ascending_sub)
             .head(3)
         )
-        sub_driver_items = []
-        for _, i_row in sub_inds.iterrows():
-            sub_driver_items.append({
+        sub_driver_items = [
+            {
                 "code": i_row["naics_industry_group"],
                 "desc": i_row["description"],
                 "diff_m": i_row["diff"] / 1_000_000,
                 "pct": i_row["pct"]
-            })
-
-        drivers_list.append({
+            }
+            for _, i_row in sub_inds.iterrows()
+        ]
+        return {
             "sector": sec_label,
             "diff_m": row["diff"] / 1_000_000,
             "pct": row["pct"],
             "sub_drivers": sub_driver_items
-        })
+        }
 
-    return curr_val, yoy_diff, yoy_pct, share_pct, drivers_list
+    # 1. Top 3 Positive Growth Contributors (Green)
+    pos_sectors = sec_comp[sec_comp["diff"] > 0].sort_values("diff", ascending=False).head(3)
+    top_drivers = [
+        build_sector_entry(sec_label, row, ascending_sub=False)
+        for sec_label, row in pos_sectors.iterrows()
+    ]
+
+    # 2. Largest Declining Sector / Drag on Growth (Red) - only if any sector declined
+    neg_sectors = sec_comp[sec_comp["diff"] < 0].sort_values("diff", ascending=True)
+    largest_drag = None
+    if not neg_sectors.empty:
+        drag_label = neg_sectors.index
+        drag_row = neg_sectors.iloc
+        largest_drag = build_sector_entry(drag_label, drag_row, ascending_sub=True)
+
+    return curr_val, yoy_diff, yoy_pct, share_pct, top_drivers, largest_drag
+
+
+nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers, nyc_drag = analyze_jurisdiction_yoy("NY CITY")
+nys_curr, nys_diff, nys_pct, nys_share, nys_drivers, nys_drag = analyze_jurisdiction_yoy("NY STATE")
+
+head_col1, head_col2 = st.columns()
+with head_col1:
+    st.markdown(f"### 📌 Latest Quarter Snapshot ({latest_year_all} Q{latest_qtr_all} vs. {prev_sty_all} Q{latest_qtr_all}) — {industry_title}")
+with head_col2:
+    if selected_sectors or selected_descriptions:
+        st.button("🔄 Reset Industry Filter", on_click=clear_driver_filters, type="tertiary", use_container_width=True)
+
+# Top KPI Cards
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric(
+    label=f"🗽 NYC Q{latest_qtr_all} Taxable Sales",
+    value=f"${nyc_curr / 1_000_000:,.1f}M",
+    delta=f"${nyc_diff / 1_000_000:+,.1f}M ({nyc_pct:+.1f}%) Y/Y" if nyc_diff is not None and nyc_pct is not None else None
+)
+m2.metric(
+    label=f"🗽 NYC Share of Total Q{latest_qtr_all} Sales",
+    value=f"{nyc_share:.1f}%"
+)
+m3.metric(
+    label=f"🏛️ NYS Q{latest_qtr_all} Taxable Sales",
+    value=f"${nys_curr / 1_000_000:,.1f}M",
+    delta=f"${nys_diff / 1_000_000:+,.1f}M ({nys_pct:+.1f}%) Y/Y" if nys_diff is not None and nys_pct is not None else None
+)
+m4.metric(
+    label=f"🏛️ NYS Share of Total Q{latest_qtr_all} Sales",
+    value=f"{nys_share:.1f}%"
+)
+
+# Side-by-Side Interactive Driver Callout Boxes
+drv_col1, drv_col2 = st.columns(2)
+
+def render_driver_card(col, jur_prefix, title, total_diff, drivers, drag_driver):
+    with col:
+        direction_word = "Increase" if (total_diff is not None and total_diff >= 0) else "Decrease"
+        diff_m = (total_diff / 1_000_000) if total_diff is not None else 0
+        with st.container(border=True):
+            st.markdown(f"**{title} — Top Sector Drivers of ${diff_m:+,.1f}M {direction_word}**")
+            st.caption("Click any 2-digit sector button to toggle filter, or expand to inspect 4-digit drivers.")
+            
+            if not drivers and not drag_driver:
+                st.caption("No prior-year comparison data available.")
+            else:
+                # 1. Render Top 3 Positive Contributors in Green (type="primary")
+                for rank, d in enumerate(drivers, start=1):
+                    pct_str = f"{d['pct']:+.1f}%" if pd.notna(d["pct"]) else "N/A"
+                    st.button(
+                        label=f"📈 #{rank}  {d['sector']}   |   ${d['diff_m']:+,.1f}M ({pct_str})",
+                        key=f"{jur_prefix}_sec_btn_{rank}",
+                        type="primary",
+                        use_container_width=True,
+                        on_click=select_sector_driver,
+                        args=(d["sector"],)
+                    )
+                    if d["sub_drivers"]:
+                        with st.expander(f"🔍 View Top 4-Digit Drivers in {d['sector']}"):
+                            for sub_idx, sub in enumerate(d["sub_drivers"], start=1):
+                                sub_pct_str = f"{sub['pct']:+.1f}%" if pd.notna(sub["pct"]) else "N/A"
+                                sub_color = "green" if sub["diff_m"] >= 0 else "red"
+                                st.markdown(
+                                    f"**{sub['code']} — {sub['desc']}**: :{sub_color}[**${sub['diff_m']:+,.1f}M ({sub_pct_str})**]"
+                                )
+                                st.button(
+                                    label=f"Filter to {sub['code']} - {sub['desc']}",
+                                    key=f"{jur_prefix}_sub_btn_{rank}_{sub_idx}",
+                                    type="tertiary",
+                                    on_click=select_4digit_driver,
+                                    args=(d["sector"], sub["desc"])
+                                )
+
+                # 2. Render Largest Declining Sector (Drag on Growth) in Red at the Bottom (type="secondary")
+                if drag_driver is not None:
+                    st.markdown("---")
+                    st.caption("🔻 **Largest Drag on Growth (Biggest Declining Sector)**")
+                    drag_pct_str = f"{drag_driver['pct']:+.1f}%" if pd.notna(drag_driver["pct"]) else "N/A"
+                    st.button(
+                        label=f"📉 Largest Drag:  {drag_driver['sector']}   |   ${drag_driver['diff_m']:+,.1f}M ({drag_pct_str})",
+                        key=f"{jur_prefix}_drag_btn",
+                        type="secondary",
+                        use_container_width=True,
+                        on_click=select_sector_driver,
+                        args=(drag_driver["sector"],)
+                    )
+                    if drag_driver["sub_drivers"]:
+                        with st.expander(f"🔍 View Largest Declining 4-Digit Industries in {drag_driver['sector']}"):
+                            for sub_idx, sub in enumerate(drag_driver["sub_drivers"], start=1):
+                                sub_pct_str = f"{sub['pct']:+.1f}%" if pd.notna(sub["pct"]) else "N/A"
+                                sub_color = "green" if sub["diff_m"] >= 0 else "red"
+                                st.markdown(
+                                    f"**{sub['code']} — {sub['desc']}**: :{sub_color}[**${sub['diff_m']:+,.1f}M ({sub_pct_str})**]"
+                                )
+                                st.button(
+                                    label=f"Filter to {sub['code']} - {sub['desc']}",
+                                    key=f"{jur_prefix}_drag_sub_btn_{sub_idx}",
+                                    type="tertiary",
+                                    on_click=select_4digit_driver,
+                                    args=(drag_driver["sector"], sub["desc"])
+                                )
+
+render_driver_card(drv_col1, "nyc", "🗽 New York City (NY CITY)", nyc_diff, nyc_drivers, nyc_drag)
 
 nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers = analyze_jurisdiction_yoy("NY CITY")
 nys_curr, nys_diff, nys_pct, nys_share, nys_drivers = analyze_jurisdiction_yoy("NY STATE")
