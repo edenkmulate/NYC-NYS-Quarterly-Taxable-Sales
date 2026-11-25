@@ -402,95 +402,153 @@ else:
     industry_title = f"{active_labels} + {len(active_labels) - 1} More"
 
 # ==============================================================================
-# 4. SUMMARY METRICS (Latest Quarter Sales, Y/Y Change & Share of Total)
+# 4. SUMMARY METRICS & TOP Y/Y GROWTH DRIVERS (2-DIGIT & 4-DIGIT NAICS)
 # ==============================================================================
 st.divider()
 
-# Helper to compute latest-quarter sales, prior-year same-quarter sales, and share of total jurisdiction sales
-def get_latest_qtr_kpis(jurisdiction_name):
-    # Full jurisdiction data (all industries) for the latest quarter to compute total denominator
+all_sty_sorted = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
+curr_sty_idx = all_sty_sorted.index(latest_year_all)
+prev_sty_all = all_sty_sorted[curr_sty_idx - 1] if curr_sty_idx > 0 else None
+
+def analyze_jurisdiction_yoy(jurisdiction_name):
+    """
+    Computes latest-quarter taxable sales, Y/Y dollar & % change, share of total,
+    and ranks the top 3 2-digit NAICS drivers + top 4-digit sub-drivers.
+    """
     jur_all_df = mod_df[mod_df["jurisdiction"] == jurisdiction_name]
     
-    # Filtered jurisdiction data (selected NAICS / industry) across all years for YoY comparison
-    jur_sel_df = mod_df[mod_df["jurisdiction"] == jurisdiction_name].copy()
+    # Apply active industry filters (if any)
+    jur_sel_df = jur_all_df.copy()
     if selected_sectors:
         jur_sel_df = jur_sel_df[jur_sel_df["naics_sector_label"].isin(selected_sectors)]
     if selected_descriptions:
         jur_sel_df = jur_sel_df[jur_sel_df["description"].isin(selected_descriptions)]
 
-    # Latest year & quarter values
-    curr_val = jur_sel_df[
+    curr_qtr_df = jur_sel_df[
         (jur_sel_df["sales_tax_year"] == latest_year_all) &
         (jur_sel_df["sales_tax_quarter"] == latest_qtr_all)
-    ]["taxable_sales_and_purchases"].sum()
+    ]
+    curr_val = curr_qtr_df["taxable_sales_and_purchases"].sum()
 
-    # Prior sales tax year (e.g., "2026 - 2027" -> "2025 - 2026")
-    all_sty_sorted = sorted(mod_df["sales_tax_year"].dropna().unique().tolist())
-    curr_idx = all_sty_sorted.index(latest_year_all)
-    if curr_idx > 0:
-        prev_sty = all_sty_sorted[curr_idx - 1]
-        prev_val = jur_sel_df[
-            (jur_sel_df["sales_tax_year"] == prev_sty) &
-            (jur_sel_df["sales_tax_quarter"] == latest_qtr_all)
-        ]["taxable_sales_and_purchases"].sum()
-    else:
-        prev_val = 0
-
-    yoy_diff_m = (curr_val - prev_val) / 1_000_000 if prev_val != 0 else None
-    yoy_pct = ((curr_val - prev_val) / abs(prev_val) * 100) if prev_val != 0 else None
-
-    # Total jurisdiction taxable sales across ALL industries in the latest quarter
+    # Share of total jurisdiction sales across all industries
     total_jur_latest_qtr = jur_all_df[
         (jur_all_df["sales_tax_year"] == latest_year_all) &
         (jur_all_df["sales_tax_quarter"] == latest_qtr_all)
     ]["taxable_sales_and_purchases"].sum()
+    share_pct = (curr_val / total_jur_latest_qtr * 100) if total_jur_latest_qtr > 0 else 0.0
 
-    share_of_total_pct = (curr_val / total_jur_latest_qtr * 100) if total_jur_latest_qtr > 0 else 0.0
+    if not prev_sty_all:
+        return curr_val, None, None, share_pct, []
 
-    return curr_val, yoy_diff_m, yoy_pct, share_of_total_pct
+    prev_qtr_df = jur_sel_df[
+        (jur_sel_df["sales_tax_year"] == prev_sty_all) &
+        (jur_sel_df["sales_tax_quarter"] == latest_qtr_all)
+    ]
+    prev_val = prev_qtr_df["taxable_sales_and_purchases"].sum()
 
-nyc_curr, nyc_diff_m, nyc_yoy_pct, nyc_share_total = get_latest_qtr_kpis("NY CITY")
-nys_curr, nys_diff_m, nys_yoy_pct, nys_share_total = get_latest_qtr_kpis("NY STATE")
+    yoy_diff = curr_val - prev_val
+    yoy_pct = (yoy_diff / abs(prev_val) * 100) if prev_val != 0 else None
 
-st.markdown(f"### 📌 Latest Quarter Snapshot ({latest_year_all} Q{latest_qtr_all}) — {industry_title}")
+    # --- 2-Digit Sector Driver Attribution ---
+    c_sec = curr_qtr_df.groupby("naics_sector_label")["taxable_sales_and_purchases"].sum()
+    p_sec = prev_qtr_df.groupby("naics_sector_label")["taxable_sales_and_purchases"].sum()
+    sec_comp = pd.DataFrame({"curr": c_sec, "prev": p_sec}).fillna(0)
+    sec_comp["diff"] = sec_comp["curr"] - sec_comp["prev"]
+    sec_comp["pct"] = sec_comp.apply(
+        lambda r: (r["diff"] / abs(r["prev"]) * 100) if r["prev"] != 0 else None, axis=1
+    )
 
+    # Sort descending if overall change is positive, ascending if overall change is negative
+    ascending_sort = yoy_diff < 0
+    top_3_sectors = sec_comp.sort_values("diff", ascending=ascending_sort).head(3)
+
+    # --- 4-Digit Industry Driver Attribution ---
+    c_ind = curr_qtr_df.groupby(["naics_sector_label", "naics_industry_group", "description"])["taxable_sales_and_purchases"].sum()
+    p_ind = prev_qtr_df.groupby(["naics_sector_label", "naics_industry_group", "description"])["taxable_sales_and_purchases"].sum()
+    ind_comp = pd.DataFrame({"curr": c_ind, "prev": p_ind}).fillna(0).reset_index()
+    ind_comp["diff"] = ind_comp["curr"] - ind_comp["prev"]
+    ind_comp["pct"] = ind_comp.apply(
+        lambda r: (r["diff"] / abs(r["prev"]) * 100) if r["prev"] != 0 else None, axis=1
+    )
+
+    drivers_list = []
+    for sec_label, row in top_3_sectors.iterrows():
+        # Get top 2 4-digit drivers within this 2-digit sector
+        sub_inds = (
+            ind_comp[ind_comp["naics_sector_label"] == sec_label]
+            .sort_values("diff", ascending=ascending_sort)
+            .head(2)
+        )
+        sub_driver_items = []
+        for _, i_row in sub_inds.iterrows():
+            i_diff_m = i_row["diff"] / 1_000_000
+            i_pct_str = f"{i_row['pct']:+.1f}%" if pd.notna(i_row["pct"]) else "N/A"
+            sub_driver_items.append(
+                f"{i_row['naics_industry_group']} - {i_row['description']} (`${i_diff_m:+,.1f}M`, `{i_pct_str}`)"
+            )
+
+        drivers_list.append({
+            "sector": sec_label,
+            "diff_m": row["diff"] / 1_000_000,
+            "pct": row["pct"],
+            "sub_drivers": sub_driver_items
+        })
+
+    return curr_val, yoy_diff, yoy_pct, share_pct, drivers_list
+
+nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers = analyze_jurisdiction_yoy("NY CITY")
+nys_curr, nys_diff, nys_pct, nys_share, nys_drivers = analyze_jurisdiction_yoy("NY STATE")
+
+st.markdown(f"### 📌 Latest Quarter Snapshot ({latest_year_all} Q{latest_qtr_all} vs. {prev_sty_all} Q{latest_qtr_all}) — {industry_title}")
+
+# Top KPI Cards
 m1, m2, m3, m4 = st.columns(4)
 
 m1.metric(
     label=f"🗽 NYC Q{latest_qtr_all} Taxable Sales",
     value=f"${nyc_curr / 1_000_000:,.1f}M",
-    delta=f"${nyc_diff_m:+,.1f}M ({nyc_yoy_pct:+.1f}%) Y/Y" if nyc_diff_m is not None else None
+    delta=f"${nyc_diff / 1_000_000:+,.1f}M ({nyc_pct:+.1f}%) Y/Y" if nyc_diff is not None and nyc_pct is not None else None
 )
-
 m2.metric(
     label=f"🗽 NYC Share of Total Q{latest_qtr_all} Sales",
-    value=f"{nyc_share_total:.1f}%"
+    value=f"{nyc_share:.1f}%"
 )
-
 m3.metric(
     label=f"🏛️ NYS Q{latest_qtr_all} Taxable Sales",
     value=f"${nys_curr / 1_000_000:,.1f}M",
-    delta=f"${nys_diff_m:+,.1f}M ({nys_yoy_pct:+.1f}%) Y/Y" if nys_diff_m is not None else None
+    delta=f"${nys_diff / 1_000_000:+,.1f}M ({nys_pct:+.1f}%) Y/Y" if nys_diff is not None and nys_pct is not None else None
 )
-
 m4.metric(
     label=f"🏛️ NYS Share of Total Q{latest_qtr_all} Sales",
-    value=f"{nys_share_total:.1f}%"
+    value=f"{nys_share:.1f}%"
 )
+
+# Side-by-Side Driver Callout Boxes (Top 3 2-Digit NAICS + 4-Digit Sub-Drivers)
+drv_col1, drv_col2 = st.columns(2)
+
+def render_driver_card(col, title, total_diff, drivers):
+    with col:
+        direction_word = "Increase" if (total_diff is not None and total_diff >= 0) else "Decrease"
+        diff_m = (total_diff / 1_000_000) if total_diff is not None else 0
+        with st.container(border=True):
+            st.markdown(f"**{title} — Top 3 Sector Drivers of ${diff_m:+,.1f}M {direction_word}**")
+            if not drivers:
+                st.caption("No prior-year comparison data available.")
+            else:
+                for rank, d in enumerate(drivers, start=1):
+                    pct_str = f"{d['pct']:+.1f}%" if pd.notna(d["pct"]) else "N/A"
+                    st.markdown(f"**{rank}. {d['sector']}**: `${d['diff_m']:+,.1f}M` (`{pct_str}`)")
+                    for sub in d["sub_drivers"]:
+                        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;↳ {sub}")
+
+render_driver_card(drv_col1, "🗽 New York City (NY CITY)", nyc_diff, nyc_drivers)
+render_driver_card(drv_col2, "🏛️ New York State (NY STATE)", nys_diff, nys_drivers)
 
 st.divider()
 
 # Keep nyc_df and nys_df defined for Section 5 charts below
 nyc_df = filtered_df[filtered_df["jurisdiction"] == "NY CITY"]
 nys_df = filtered_df[filtered_df["jurisdiction"] == "NY STATE"]
-year_order = sorted(filtered_df["sales_tax_year"].dropna().unique().tolist())
-quarter_order = (
-    filtered_df[["sales_tax_quarter", "quarter_label"]]
-    .dropna(subset=["sales_tax_quarter"])
-    .drop_duplicates()
-    .sort_values("sales_tax_quarter")["quarter_label"]
-    .tolist()
-)
 # ------------------------------------------------------------------------------
 # ROW A: QUARTERLY TAXABLE SALES BY YEAR (NYC vs. NYS)
 # ------------------------------------------------------------------------------
