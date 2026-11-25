@@ -579,8 +579,7 @@ def analyze_jurisdiction_yoy(jurisdiction_name):
     return curr_val, yoy_diff, yoy_pct, share_pct, top_drivers, largest_drag
 
 
-nyc_curr, nyc_diff, nyc_pct, nyc_share, nyc_drivers, nyc_drag = analyze_jurisdiction_yoy("NY CITY")
-nys_curr, nys_diff, nys_pct, nys_share, nys_drivers, nys_drag = analyze_jurisdiction_yoy("NY STATE")
+
 
 head_col1, head_col2 = st.columns([4, 1])
 with head_col1:
